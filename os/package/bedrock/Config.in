@@ -1,0 +1,5 @@
+config BR2_PACKAGE_BEDROCK
+	bool "bedrock"
+	help
+	  Bedrock hardware diagnostics, built from tools/ in this
+	  repository and installed as /usr/bin/bedrock.

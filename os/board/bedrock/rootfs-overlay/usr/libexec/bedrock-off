@@ -1,0 +1,8 @@
+#!/bin/sh
+# Usage: bedrock-off reboot|poweroff
+# Quiet shutdown: flush and unmount the report partition, then reboot or power
+# off directly (busybox init's own shutdown path prints messages on the console).
+printf '\033[0m\033[2J\033[?25l'
+sync
+umount -r /mnt/report 2>/dev/null
+exec "$1" -f

@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build bedrock.img and bedrock-v86.iso
+        run: make img v86
+
+      - name: QEMU boot test (Pentium III + SeaBIOS, x86_64 + OVMF)
+        run: make boottest
+
+      - name: Keep boot logs and menu screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boottest
+          path: |
+            out/*.log
+            out/*.png
+
+      - name: Attach images to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "Bedrock $GITHUB_REF_NAME" --notes "Write bedrock.img to a USB stick with Rufus, balenaEtcher or dd. bedrock-v86.iso is for the v86 browser emulator. The images contain Linux, BusyBox, SYSLINUX, GRUB 2 and memtest86+ under the GPL, and the Terminus console font under the SIL OFL; their sources: https://kernel.org, https://busybox.net, https://wiki.syslinux.org, https://www.gnu.org/software/grub, https://github.com/memtest86plus/memtest86plus, https://terminus-font.sourceforge.net. Buildroot $(grep -m1 BR_VERSION= docker/Dockerfile | cut -d= -f2) builds the Linux side."
+          gh release upload "$GITHUB_REF_NAME" out/bedrock.img out/bedrock-v86.iso --clobber

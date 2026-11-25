@@ -1,0 +1,32 @@
+#!/bin/sh
+# Kernel filesystems, the boot splash, then the stick's FAT partition (label
+# BEDROCK) at /mnt/report.
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
+hostname -F /etc/hostname
+
+# Splash centred on the framebuffer (twice the size on high-resolution screens),
+# or as text on a VGA text console.
+img=/usr/share/bedrock/splash.ppm
+if read -r size </sys/class/graphics/fb0/virtual_size 2>/dev/null; then
+	w=${size%,*} h=${size#*,}
+	[ "$w" -ge 1600 ] && img=/usr/share/bedrock/splash2x.ppm
+	{ read -r _; read -r iw ih; } <"$img"
+	printf 'IMG_LEFT=%d\nIMG_TOP=%d\n' $(((w - iw) / 2)) $(((h - ih) / 2)) | fbsplash -s "$img" -i -
+else
+	set -- $(stty size </dev/tty1)
+	printf '\033[0m\033[2J\033[%d;%dH\033[1;37mB E D R O C K\033[%d;%dH\033[0;37mbuilt by erdem6.com\033[0m' \
+		$(($1 / 2 - 1)) $((($2 - 13) / 2 + 1)) $(($1 / 2 + 1)) $((($2 - 19) / 2 + 1)) >/dev/tty1
+fi
+
+# USB sticks enumerate a few seconds after boot.
+mkdir -p /mnt/report
+for i in 1 2 3 4 5 6 7 8; do
+	dev=$(blkid | sed -n 's/^\([^:]*\): LABEL="BEDROCK".*/\1/p' | head -n 1)
+	[ -n "$dev" ] && mount -t vfat "$dev" /mnt/report && break
+	sleep 1
+done
+# Into the kernel log (dmesg); the CI boot test raises the loglevel to see it on serial.
+mountpoint -q /mnt/report && echo "bedrock: report partition $dev mounted at /mnt/report" >/dev/kmsg \
+	|| echo "bedrock: no BEDROCK partition found, reports stay in RAM" >/dev/kmsg

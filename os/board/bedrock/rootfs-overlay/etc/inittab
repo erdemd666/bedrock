@@ -1,0 +1,6 @@
+# Bedrock runs on the first VT and on COM1; the wrapper idles if COM1 is absent.
+::sysinit:/bin/sh /etc/init.d/rcS
+::respawn:/bin/sh /usr/libexec/bedrock-run tty1
+::respawn:/bin/sh /usr/libexec/bedrock-run ttyS0
+::ctrlaltdel:/bin/sh /usr/libexec/bedrock-off reboot
+::shutdown:/bin/umount -a -r

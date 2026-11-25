@@ -1,0 +1,45 @@
+#!/bin/sh
+# Usage: bedrock-run TTY (started and respawned by init).
+# Runs bedrock on TTY. When it exits, a closing screen offers restart, reboot and
+# power off. Typing the hidden word "maintain" there opens a maintenance shell.
+# With bedrock.report on the kernel command line, ttyS0 first runs one headless
+# report (used by the CI boot test).
+tty=$1
+case $tty in
+ttyS*)	grep -q "^${tty#ttyS}: uart:unknown" /proc/tty/driver/serial && exec sleep 2147483647 ;;
+esac
+# init made us a session leader without a terminal; opening the tty makes it ours.
+exec </dev/"$tty" >/dev/"$tty" 2>&1
+
+# Terminus 16x32 on high-resolution framebuffers, the kernel's 8x16 otherwise.
+if [ "$tty" = tty1 ] && read -r size </sys/class/graphics/fb0/virtual_size 2>/dev/null && [ "${size%,*}" -ge 1600 ]; then
+	loadfont </usr/share/consolefonts/terminus-32.psf
+fi
+
+if [ "$tty" = ttyS0 ] && grep -qw bedrock.report /proc/cmdline && [ ! -e /tmp/report-done ]; then
+	: >/tmp/report-done
+	/usr/bin/bedrock --report
+	echo "bedrock --report: exit $?"
+fi
+
+while :; do
+	/usr/bin/bedrock
+	set -- $(stty size 2>/dev/null)
+	rows=${1:-25} cols=${2:-80}
+	[ "$rows" -gt 0 ] || rows=25 cols=80
+	printf '\033[0m\033[2J\033[?25l\033[%d;%dH\033[1;37mBedrock has closed.\033[0m\033[%d;%dH[Enter] restart \302\267 [R] reboot \302\267 [P] power off' \
+		$((rows / 2 - 1)) $(((cols - 19) / 2 + 1)) $((rows / 2 + 1)) $(((cols - 44) / 2 + 1))
+	word=
+	while read -r -s -n 1 key; do
+		case $key in
+		'')	continue 2 ;;
+		[rR])	exec /bin/sh /usr/libexec/bedrock-off reboot ;;
+		[pP])	exec /bin/sh /usr/libexec/bedrock-off poweroff ;;
+		esac
+		word=$word$key
+		case $word in *maintain)
+			printf '\033[0m\033[2J\033[H\033[?25h'
+			exec /bin/sh ;;
+		esac
+	done
+done

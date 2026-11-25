@@ -1,0 +1,10 @@
+# Excerpt in pci.ids format for the lookup test.
+1002  Advanced Micro Devices, Inc. [AMD/ATI]
+	67df  Ellesmere [Radeon RX 470/480/570/570X/580/580X/590]
+		1002 0b37  Radeon RX 480
+10de  NVIDIA Corporation
+	1b80  GP104 [GeForce GTX 1080]
+1234  Technical Corp.
+	1111  QEMU Virtual Video Controller
+C 03  Display controller
+	00  VGA compatible controller

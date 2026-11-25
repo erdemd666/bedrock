@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_BEDROCK_PATH/package/bedrock/Config.in"
