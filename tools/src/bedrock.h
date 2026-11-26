@@ -95,6 +95,9 @@ enum { SAT_NONE, SAT_IN, SAT_OUT };
 void sat_cdb(uint8_t cdb[16], int dir, uint8_t cmd, uint8_t feat, uint8_t lba_mid, uint8_t lba_hi);
 int sat_cmd(int fd, uint8_t cmd, uint8_t feat, uint8_t lba_mid, uint8_t lba_hi, void *buf);
 int sat_out(int fd, uint8_t cmd, void *buf, unsigned tmo_ms);
+struct ata_regs { uint8_t err, status, dev; int ext; unsigned long long lba; };
+int sat_sense_regs(const uint8_t *sense, size_t n, struct ata_regs *r);
+int sat_regs(int fd, uint8_t cmd, int lba48, struct ata_regs *r);
 int scsi_serial(int fd, char *out, size_t n);
 int nvme_admin(int fd, uint8_t op, uint32_t nsid, uint32_t cdw10, void *buf, unsigned len, unsigned tmo_ms);
 int nvme_log(int fd, uint8_t lid, uint8_t buf[512]);
@@ -104,6 +107,28 @@ enum verdict smart_ata_verdict(const struct ata_smart *a, char *why, size_t n);
 void smart_nvme_parse(const uint8_t s[512], struct nvme_smart *m);
 enum verdict smart_nvme_verdict(const struct nvme_smart *m, char *why, size_t n);
 void smart_show(FILE *o, const struct disk *d);
+
+/* hidden.c */
+unsigned long long ata_user_sectors(const uint16_t id[256]);
+unsigned ata_sector_bytes(const uint16_t id[256]);
+int dco_max_lba(const uint8_t blk[512], unsigned long long *max);
+long long nvme_unallocated(const uint8_t ctrl[4096]);
+enum { Q_NO, Q_OK, Q_REFUSED }; /* a query the drive does not have, answered, or refused */
+struct hidden { unsigned long long cur, native, dco; unsigned ss; int native_q, dco_q; }; /* sector counts */
+long long hidden_calc(const struct hidden *h, char *why, size_t n);
+long long hidden_area(const struct disk *d, char *why, size_t n);
+void hidden_show(FILE *o, const struct disk *d, int idx);
+
+/* battery.c */
+struct batt {
+	char name[32], model[64], maker[64], tech[32], status[32];
+	long long ef, ed, cf, cd, vmin; /* energy_full[_design] uWh, charge_full[_design] uAh, voltage_min_design uV; -1 = not reported */
+	long long cycles, capacity;
+};
+struct batt_calc { double pct, full_wh, design_wh; }; /* -1 = unknown */
+int batt_load(const char *dir, struct batt *b);
+enum verdict batt_check(const struct batt *b, struct batt_calc *c, char *why, size_t n);
+void battery_show(FILE *o);
 
 /* board.c */
 struct dimm {

@@ -112,6 +112,7 @@ static void save_report(void)
 static void display(void) { screen(); gpu_display_test(); pause_enter(); }
 static void wipe(void) { screen(); wipe_run(); pause_enter(); }
 static void do_sysinfo(void) { run_paged(sysinfo); }
+static void do_battery(void) { run_paged(battery_show); }
 static void do_disks(void) { run_paged(disk_show); }
 static void do_stress(void) { run_paged(stress); }
 static void do_memtest(void) { run_paged(memtest); }
@@ -130,6 +131,7 @@ static const struct item {
 	{'6', "Display test (colours and gradients)", display},
 	{'7', "Save a report to the USB stick", save_report},
 	{'8', "Wipe a disk (destroys data)", wipe},
+	{'a', "Battery health (laptops)", do_battery},
 };
 
 int main(int argc, char **argv)

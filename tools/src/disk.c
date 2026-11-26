@@ -160,6 +160,7 @@ void disk_show(FILE *o)
 		fact(key, "%s|%s|%s|%llu|%s", d[i].name, d[i].model, d[i].serial, d[i].bytes,
 			d[i].nvme ? "NVMe" : d[i].ata ? (d[i].id[217] == 1 ? "ATA SSD" : "ATA") : "other");
 		smart_show(o, &d[i]);
+		hidden_show(o, &d[i], i);
 	}
 }
 

@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int checks, fails;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; fprintf(stderr, "%s:%d: FAILED: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -429,6 +430,206 @@ static void test_record(void)
 	record_reset();
 }
 
+/* ATA Status Return descriptor (SAT-4 12.2.2.2) as libata builds it after a CK_COND command. */
+static void sense_regs(uint8_t s[32], int ext, const uint8_t lo[3], const uint8_t hob[3], uint8_t dev, uint8_t status)
+{
+	memset(s, 0, 32);
+	s[0] = 0x72, s[1] = 1, s[3] = 0x1d, s[7] = 14;
+	s[8] = 0x09, s[9] = 0x0c, s[10] = ext, s[12] = 1;
+	s[14] = lo[0], s[15] = hob[0], s[16] = lo[1], s[17] = hob[1], s[18] = lo[2], s[19] = hob[2];
+	s[20] = dev, s[21] = status;
+}
+
+static void test_sense_regs(void)
+{
+	static const uint8_t lo[3] = {0x9a, 0x78, 0x56}, hob[3] = {0x34, 0x12, 0x00}, junk[3] = {0xff, 0xff, 0xff};
+	uint8_t s[32];
+	struct ata_regs r;
+	sense_regs(s, 1, lo, hob, 0x40, 0x50);
+	CHECK(sat_sense_regs(s, sizeof s, &r) == 0 && r.ext && r.lba == 0x123456789aULL && r.status == 0x50);
+	sense_regs(s, 0, lo, junk, 0x4a, 0x50); /* 28-bit: high-order bytes ignored, LBA 27:24 in the device register */
+	CHECK(sat_sense_regs(s, sizeof s, &r) == 0 && !r.ext && r.lba == 0x0a56789aULL);
+	/* another descriptor first: the walk must skip it */
+	sense_regs(s, 1, lo, hob, 0x40, 0x50);
+	memmove(s + 16, s + 8, 14);
+	memset(s + 8, 0, 8);
+	s[7] = 22, s[9] = 6;
+	CHECK(sat_sense_regs(s, 32, &r) == 0 && r.lba == 0x123456789aULL);
+	s[0] = 0x70; /* fixed format carries no registers */
+	CHECK(sat_sense_regs(s, 32, &r) == -1);
+	sense_regs(s, 1, lo, hob, 0x40, 0x50);
+	s[8] = 0x02;
+	CHECK(sat_sense_regs(s, 32, &r) == -1); /* wrong descriptor code */
+	sense_regs(s, 1, lo, hob, 0x40, 0x50);
+	CHECK(sat_sense_regs(s, 16, &r) == -1); /* truncated descriptor */
+	CHECK(sat_sense_regs(s, 4, &r) == -1);
+}
+
+static void put_word(uint8_t *blk, int w, uint16_t v)
+{
+	blk[2 * w] = v & 0xff, blk[2 * w + 1] = v >> 8;
+}
+
+static void test_hidden(void)
+{
+	uint16_t id[256] = {0};
+	uint8_t blk[512] = {0}, sum = 0;
+	unsigned long long m;
+	char why[256];
+	struct hidden h = {.cur = 1000, .native = 1000, .dco = 1000, .ss = 512, .native_q = Q_OK, .dco_q = Q_OK};
+
+	id[60] = 0x1234, id[61] = 1;
+	CHECK(ata_user_sectors(id) == 0x11234);
+	id[100] = 0x5678, id[101] = 0x1234, id[102] = 0x0002, id[103] = 0;
+	CHECK(ata_user_sectors(id) == 0x11234); /* word 83 not valid: 28-bit count */
+	id[83] = 0x4400;
+	CHECK(ata_user_sectors(id) == 0x212345678ULL);
+	id[83] = 0x8400; /* bits 15:14 wrong: feature word not valid */
+	CHECK(ata_user_sectors(id) == 0x11234);
+	CHECK(ata_sector_bytes(id) == 512);
+	id[106] = 0x5000, id[117] = 2048;
+	CHECK(ata_sector_bytes(id) == 4096);
+	id[106] = 0x4000; /* 4K bit not set */
+	CHECK(ata_sector_bytes(id) == 512);
+
+	put_word(blk, 3, 0x5678), put_word(blk, 4, 0x1234), put_word(blk, 5, 0x0002);
+	blk[510] = 0xa5;
+	for (int i = 0; i < 511; i++)
+		sum += blk[i];
+	blk[511] = -sum;
+	CHECK(dco_max_lba(blk, &m) == 0 && m == 0x212345678ULL);
+	blk[511]++;
+	CHECK(dco_max_lba(blk, &m) == -1); /* checksum */
+	blk[511]--;
+	blk[510] = 0;
+	blk[511] = 0;
+	CHECK(dco_max_lba(blk, &m) == -1); /* no signature */
+	memset(blk, 0, sizeof blk);
+	CHECK(dco_max_lba(blk, &m) == -1); /* a bridge that returns zeros */
+
+	CHECK(hidden_calc(&h, why, sizeof why) == 0 && strstr(why, "none found"));
+	h.native = 1500;
+	h.dco = 1500;
+	CHECK(hidden_calc(&h, why, sizeof why) == 500 * 512 && strstr(why, "HPA") && !strstr(why, "DCO") && strstr(why, "wipe"));
+	h.dco = 2500; /* the DCO hides another 1000 sectors */
+	CHECK(hidden_calc(&h, why, sizeof why) == 1500 * 512 && strstr(why, "HPA") && strstr(why, "DCO"));
+	h.native = 1000;
+	CHECK(hidden_calc(&h, why, sizeof why) == 1500 * 512 && !strstr(why, "HPA") && strstr(why, "DCO"));
+	h.ss = 4096;
+	h.dco = 1000 + (1ULL << 30) / 4096 * 3; /* 3 GiB */
+	CHECK(hidden_calc(&h, why, sizeof why) == 3LL << 30 && strstr(why, "3.2 GB"));
+	h.ss = 512;
+	h.dco = 1000;
+	h.native_q = Q_REFUSED; /* a bridge that refuses cannot be taken as "none" */
+	CHECK(hidden_calc(&h, why, sizeof why) == -1 && strstr(why, "refused"));
+	h.native_q = Q_NO;
+	CHECK(hidden_calc(&h, why, sizeof why) == 0);
+	h.dco_q = Q_REFUSED;
+	CHECK(hidden_calc(&h, why, sizeof why) == -1);
+	h.dco_q = Q_NO;
+	h.native_q = Q_OK;
+	h.native = 999; /* native below visible: bogus */
+	CHECK(hidden_calc(&h, why, sizeof why) == -1);
+	h.native = 0; /* a bridge that answers with zeros */
+	CHECK(hidden_calc(&h, why, sizeof why) == -1);
+	h.native = 1ULL << 50;
+	CHECK(hidden_calc(&h, why, sizeof why) == -1);
+	h.native = 1000;
+	h.dco_q = Q_OK;
+	h.dco = 900; /* factory max below native: bogus */
+	CHECK(hidden_calc(&h, why, sizeof why) == -1);
+
+	uint8_t c[4096] = {0};
+	CHECK(nvme_unallocated(c) == 0); /* no namespace management: nothing unassigned */
+	c[256] = 8;
+	CHECK(nvme_unallocated(c) == -1); /* management supported but capacity not reported */
+	for (int i = 0; i < 8; i++)
+		c[280 + i] = (1000000000000ULL >> 8 * i) & 0xff, c[296 + i] = (200000000000ULL >> 8 * i) & 0xff;
+	CHECK(nvme_unallocated(c) == 200000000000LL);
+	c[296 + 8] = 1; /* UNVMCAP above 64 bits */
+	CHECK(nvme_unallocated(c) == -1);
+	c[296 + 8] = 0;
+	c[296 + 7] = 0xff; /* more unassigned than the total */
+	CHECK(nvme_unallocated(c) == -1);
+}
+
+static void put(const char *dir, const char *name, const char *val)
+{
+	char p[300];
+	snprintf(p, sizeof p, "%s/%s", dir, name);
+	FILE *f = fopen(p, "w");
+	if (f) {
+		fprintf(f, "%s\n", val);
+		fclose(f);
+	}
+}
+
+static enum verdict bcheck(long long ef, long long ed, long long cf, long long cd, long long vmin, struct batt_calc *c, char *why)
+{
+	struct batt b = {.ef = ef, .ed = ed, .cf = cf, .cd = cd, .vmin = vmin, .cycles = -1, .capacity = -1};
+	return batt_check(&b, c, why, 384);
+}
+
+static void test_battery(void)
+{
+	struct batt_calc c;
+	char why[384];
+	/* energy_*, uWh: 41.2 of 45 Wh is 91% */
+	CHECK(bcheck(41200000, 45000000, -1, -1, -1, &c, why) == V_PASS && (int)c.pct == 91);
+	CHECK(strstr(why, "Excellent") && strstr(why, "41.2 of 45.0 Wh") && c.design_wh == 45.0);
+	CHECK(bcheck(42500000, 50000000, -1, -1, -1, &c, why) == V_PASS && strstr(why, "Excellent")); /* 85% exactly */
+	CHECK(bcheck(42400000, 50000000, -1, -1, -1, &c, why) == V_PASS && strstr(why, "Good"));
+	CHECK(bcheck(40000000, 50000000, -1, -1, -1, &c, why) == V_PASS && strstr(why, "Good")); /* 80% exactly */
+	CHECK(bcheck(39000000, 50000000, -1, -1, -1, &c, why) == V_PASS && strstr(why, "Fair"));
+	CHECK(bcheck(25000000, 50000000, -1, -1, -1, &c, why) == V_PASS && strstr(why, "Fair")); /* 50% exactly */
+	CHECK(bcheck(24500000, 50000000, -1, -1, -1, &c, why) == V_FAIL && strstr(why, "Poor") && (int)c.pct == 49);
+	/* charge_*, uAh: 3 of 4 Ah = 75%; Wh needs the design voltage */
+	CHECK(bcheck(-1, -1, 3000000, 4000000, 11400000, &c, why) == V_PASS && (int)c.pct == 75);
+	CHECK(c.design_wh > 45.5 && c.design_wh < 45.7 && strstr(why, "Fair"));
+	CHECK(bcheck(-1, -1, 3000000, 4000000, -1, &c, why) == V_PASS && (int)c.pct == 75 && c.design_wh < 0 && !strstr(why, "Wh"));
+	/* design in energy, full in charge: converted with the design voltage */
+	CHECK(bcheck(-1, 45000000, 3500000, -1, 11400000, &c, why) == V_PASS && (int)c.pct == 88);
+	CHECK(bcheck(-1, 45000000, 3500000, -1, -1, &c, why) == V_INCONCLUSIVE); /* cannot convert */
+	/* things that must never become a verdict */
+	CHECK(bcheck(41000000, 0, -1, -1, -1, &c, why) == V_INCONCLUSIVE && c.pct < 0); /* design 0 */
+	CHECK(bcheck(41000000, -1, -1, -1, -1, &c, why) == V_INCONCLUSIVE); /* no design value */
+	CHECK(bcheck(-1, -1, -1, -1, -1, &c, why) == V_INCONCLUSIVE);
+	CHECK(bcheck(0, 45000000, -1, -1, -1, &c, why) == V_INCONCLUSIVE); /* full 0 */
+	CHECK(bcheck(60000000, 45000000, -1, -1, -1, &c, why) == V_INCONCLUSIVE && strstr(why, "credible")); /* 133% */
+	CHECK(bcheck(58000000, 45000000, -1, -1, -1, &c, why) == V_PASS); /* 129%: rounding in firmware, plausible */
+	CHECK(bcheck(4294967295LL, 4294967295LL, -1, -1, -1, &c, why) == V_INCONCLUSIVE); /* 4295 Wh */
+	CHECK(bcheck(-1, -1, 3000000, 4000000, 0x7fffffff, &c, why) == V_INCONCLUSIVE); /* absurd voltage */
+	CHECK(bcheck(-1, -1, 900000000, 900000000, -1, &c, why) == V_INCONCLUSIVE); /* 900 Ah */
+
+	char dir[] = "/tmp/bedrock-XXXXXX";
+	static const char *files[] = {"present", "model_name", "manufacturer", "technology", "status", "capacity",
+		"cycle_count", "charge_full", "charge_full_design", "voltage_min_design"};
+	struct batt b;
+	CHECK(mkdtemp(dir) != NULL);
+	put(dir, "model_name", "L17M3PB0");
+	put(dir, "manufacturer", "SMP");
+	put(dir, "technology", "Li-poly");
+	put(dir, "status", "Discharging");
+	put(dir, "capacity", "87");
+	put(dir, "cycle_count", "312");
+	put(dir, "charge_full", "3300000");
+	put(dir, "charge_full_design", "4000000");
+	put(dir, "voltage_min_design", "11400000");
+	CHECK(batt_load(dir, &b) == 0);
+	CHECK(!strcmp(b.model, "L17M3PB0") && !strcmp(b.maker, "SMP") && !strcmp(b.tech, "Li-poly") && !strcmp(b.status, "Discharging"));
+	CHECK(b.capacity == 87 && b.cycles == 312 && b.cf == 3300000 && b.cd == 4000000 && b.vmin == 11400000);
+	CHECK(b.ef == -1 && b.ed == -1 && !strncmp(b.name, "bedrock-", 8)); /* missing files read as -1 */
+	CHECK(batt_check(&b, &c, why, sizeof why) == V_PASS && (int)c.pct == 82 && strstr(why, "Good") && strstr(why, "312 cycles"));
+	put(dir, "present", "0");
+	CHECK(batt_load(dir, &b) == -1); /* empty bay */
+	for (size_t i = 0; i < sizeof files / sizeof *files; i++) {
+		char p[300];
+		snprintf(p, sizeof p, "%s/%s", dir, files[i]);
+		remove(p);
+	}
+	rmdir(dir);
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +645,9 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_sense_regs();
+	test_hidden();
+	test_battery();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }
