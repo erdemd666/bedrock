@@ -154,6 +154,11 @@ void disk_show(FILE *o)
 		fprintf(o, "  %s  %s  serial %s  firmware %s  %s\n", d[i].name,
 			d[i].model[0] ? d[i].model : "(no model)", d[i].serial[0] ? d[i].serial : "(none)",
 			d[i].fw[0] ? d[i].fw : "?", sz);
+		/* name|model|serial|bytes|kind, split by inventory and certificates */
+		char key[32];
+		snprintf(key, sizeof key, "disk.%d", i);
+		fact(key, "%s|%s|%s|%llu|%s", d[i].name, d[i].model, d[i].serial, d[i].bytes,
+			d[i].nvme ? "NVMe" : d[i].ata ? (d[i].id[217] == 1 ? "ATA SSD" : "ATA") : "other");
 		smart_show(o, &d[i]);
 	}
 }

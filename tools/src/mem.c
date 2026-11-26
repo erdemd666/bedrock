@@ -169,6 +169,7 @@ void mem_test(FILE *o, size_t cap)
 		return;
 	}
 	fprintf(o, "Memory test: %zu MiB locked of %lld MiB total\n", size >> 20, total >> 20);
+	fact("memory.visible_mb", "%lld", total >> 20);
 	unsigned long e = mem_patterns(p, size / sizeof(unsigned long), o);
 	munlock(p, size);
 	munmap(p, size);

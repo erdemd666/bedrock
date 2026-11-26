@@ -182,6 +182,12 @@ void board_show(FILE *o)
 		fprintf(o, "Board\n  %s %s (system: %s %s, serial %s)\n", s.board_maker, s.board_product,
 			s.sys_maker, s.sys_product, s.sys_serial[0] ? s.sys_serial : "-");
 		fprintf(o, "  BIOS %s %s, dated %s\n", s.bios_vendor, s.bios_ver, s.bios_date);
+		fact("system.manufacturer", "%s", s.sys_maker);
+		fact("system.product", "%s", s.sys_product);
+		fact("system.serial", "%s", s.sys_serial);
+		fact("board.manufacturer", "%s", s.board_maker);
+		fact("board.product", "%s", s.board_product);
+		fact("bios.version", "%s %s (%s)", s.bios_vendor, s.bios_ver, s.bios_date);
 		if (s.cpu_ver[0] || s.cpu_socket[0])
 			fprintf(o, "  CPU socket %s: %s, %u cores / %u threads, %u MHz (max %u)\n", s.cpu_socket,
 				s.cpu_ver, s.cpu_cores, s.cpu_threads, s.cpu_cur_mhz, s.cpu_max_mhz);
@@ -203,6 +209,8 @@ void board_show(FILE *o)
 			fprintf(o, " %s %u MT/s  %s %s  serial %s\n", d->type, d->speed, d->maker, d->part, d->serial);
 		}
 		fprintf(o, "  installed: %llu MB\n", total);
+		fact("memory.installed_mb", "%llu", total);
+		fact("memory.slots", "%d", s.nslots);
 	} else {
 		char a[64] = "", b[64] = "", c[64] = "", d[64] = "";
 		read_file("/sys/class/dmi/id/board_vendor", a, sizeof a);
@@ -210,6 +218,12 @@ void board_show(FILE *o)
 		read_file("/sys/class/dmi/id/bios_version", c, sizeof c);
 		read_file("/sys/class/dmi/id/bios_date", s.bios_date, sizeof s.bios_date);
 		read_file("/sys/class/dmi/id/product_name", d, sizeof d);
+		if (a[0] || b[0] || c[0]) {
+			fact("system.product", "%s", d);
+			fact("board.manufacturer", "%s", a);
+			fact("board.product", "%s", b);
+			fact("bios.version", "%s (%s)", c, s.bios_date);
+		}
 		if (a[0] || b[0] || c[0])
 			fprintf(o, "Board (no SMBIOS table, firmware summary)\n  %s %s (%s), BIOS %s dated %s\n", a, b, d, c, s.bios_date);
 		else

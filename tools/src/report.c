@@ -17,12 +17,13 @@ void verdict(FILE *o, enum verdict v, const char *test, const char *fmt, ...)
 	static const char *name[] = {"PASS", "FAIL", "INCONCLUSIVE", "NOT PRESENT"};
 	static const char *col[] = {"\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[2m"};
 	va_list ap;
+	char detail[384];
 	g_count[v]++;
-	fprintf(o, "  %s%-12s%s %s: ", g_color ? col[v] : "", name[v], g_color ? "\033[0m" : "", test);
 	va_start(ap, fmt);
-	vfprintf(o, fmt, ap);
+	vsnprintf(detail, sizeof detail, fmt, ap);
 	va_end(ap);
-	fputc('\n', o);
+	record_result(v, test, detail);
+	fprintf(o, "  %s%-12s%s %s: %s\n", g_color ? col[v] : "", name[v], g_color ? "\033[0m" : "", test, detail);
 }
 
 /* Whole small file as a string, trailing whitespace removed. -1 if unreadable. */
@@ -62,6 +63,7 @@ void report_run(FILE *o, const char *title)
 	int color = g_color;
 	g_color = 0; /* plain text in files and on serial */
 	memset(g_count, 0, sizeof g_count);
+	record_reset();
 	strftime(ts, sizeof ts, "%Y-%m-%d %H:%M UTC", gmtime(&t));
 	uname(&u);
 	fprintf(o, "%s\n%s, %s, kernel %s %s\n"

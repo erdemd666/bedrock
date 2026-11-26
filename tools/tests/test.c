@@ -409,6 +409,26 @@ static void test_mem_patterns(void)
 	free(p);
 }
 
+static void test_record(void)
+{
+	char *buf = NULL;
+	size_t len = 0;
+	record_reset();
+	fact("system.serial", "AB\"C\\ %d  ", 7);
+	CHECK(!strcmp(fact_get("system.serial"), "AB\"C\\ 7")); /* trailing padding trimmed */
+	fact("system.serial", "SN-%d", 42); /* same key replaces */
+	record_result(V_FAIL, "Memory", "3 bit errors\n\x01");
+	CHECK(g_nfact == 1 && !strcmp(fact_get("system.serial"), "SN-42"));
+	FILE *m = open_memstream(&buf, &len);
+	record_json(m);
+	fclose(m);
+	CHECK(strstr(buf, "\"facts\":{\"system.serial\":\"SN-42\"}") != NULL);
+	CHECK(strstr(buf, "\"detail\":\"3 bit errors\\n\\u0001\"") != NULL);
+	CHECK(strstr(buf, "\"summary\":{\"pass\":0,\"fail\":1,") != NULL);
+	free(buf);
+	record_reset();
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -423,6 +443,7 @@ int main(void)
 	test_erase_verify();
 	test_pciids();
 	test_mem_patterns();
+	test_record();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

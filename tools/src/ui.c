@@ -97,9 +97,44 @@ static void pause_enter(void)
 	ask("\nPress Enter to return to the menu.", in, sizeof in);
 }
 
+static void save_report(void)
+{
+	char path[512];
+	screen();
+	printf("Running quick checks for the report (about a minute)...\n");
+	if (report_save(path, sizeof path))
+		printf("Could not write the report: no writable FAT partition mounted.\n");
+	else
+		printf("Saved %s\n", path);
+	pause_enter();
+}
+
+static void display(void) { screen(); gpu_display_test(); pause_enter(); }
+static void wipe(void) { screen(); wipe_run(); pause_enter(); }
+static void do_sysinfo(void) { run_paged(sysinfo); }
+static void do_disks(void) { run_paged(disk_show); }
+static void do_stress(void) { run_paged(stress); }
+static void do_memtest(void) { run_paged(memtest); }
+
+/* The main menu. Each feature adds one line here; keys are shown in this order. */
+static const struct item {
+	char key;
+	const char *label;
+	void (*run)(void);
+} menu[] = {
+	{'1', "System info: CPU, board, memory slots, sensors, PCI and GPU", do_sysinfo},
+	{'2', "Disks: identify and SMART health", do_disks},
+	{'3', "Disk surface scan (read-only)", pick_and_scan},
+	{'4', "CPU stress test (60 s, every core)", do_stress},
+	{'5', "Memory test (all free RAM)", do_memtest},
+	{'6', "Display test (colours and gradients)", display},
+	{'7', "Save a report to the USB stick", save_report},
+	{'8', "Wipe a disk (destroys data)", wipe},
+};
+
 int main(int argc, char **argv)
 {
-	char in[64], path[512];
+	char in[64];
 	signal(SIGINT, on_int);
 	if (argc >= 2 && !strcmp(argv[1], "--report") && argc <= 3) {
 		FILE *o = argc == 3 ? fopen(argv[2], "w") : stdout;
@@ -119,37 +154,18 @@ int main(int argc, char **argv)
 	g_color = 1;
 	for (;;) {
 		screen();
-		printf("  1  System info: CPU, board, memory slots, sensors, PCI and GPU\n"
-		       "  2  Disks: identify and SMART health\n"
-		       "  3  Disk surface scan (read-only)\n"
-		       "  4  CPU stress test (60 s, every core)\n"
-		       "  5  Memory test (all free RAM)\n"
-		       "  6  Display test (colours and gradients)\n"
-		       "  7  Save a report to the USB stick\n"
-		       "  8  Wipe a disk (destroys data)\n\n"
-		       "  r  Reboot    p  Power off    q  Quit\n\n"
+		for (size_t i = 0; i < sizeof menu / sizeof *menu; i++)
+			printf("  %c  %s\n", menu[i].key, menu[i].label);
+		printf("\n  r  Reboot    p  Power off    q  Quit\n\n"
 		       "For a RAM test that also covers memory in use by the system, reboot and\n"
 		       "choose Full memory test in the boot menu.\n\n");
 		if (ask("Choice: ", in, sizeof in))
 			return 0; /* no console input: nothing to wait for */
 		g_stop = 0;
+		for (size_t i = 0; i < sizeof menu / sizeof *menu; i++)
+			if (in[0] == menu[i].key)
+				menu[i].run();
 		switch (in[0]) {
-		case '1': run_paged(sysinfo); break;
-		case '2': run_paged(disk_show); break;
-		case '3': pick_and_scan(); break;
-		case '4': run_paged(stress); break;
-		case '5': run_paged(memtest); break;
-		case '6': screen(); gpu_display_test(); pause_enter(); break;
-		case '7':
-			screen();
-			printf("Running quick checks for the report (about a minute)...\n");
-			if (report_save(path, sizeof path))
-				printf("Could not write the report: no writable FAT partition mounted.\n");
-			else
-				printf("Saved %s\n", path);
-			pause_enter();
-			break;
-		case '8': screen(); wipe_run(); pause_enter(); break;
 		case 'r': sync(); reboot(RB_AUTOBOOT); perror("reboot"); pause_enter(); break;
 		case 'p': sync(); reboot(RB_POWER_OFF); perror("power off"); pause_enter(); break;
 		case 'q': return 0;

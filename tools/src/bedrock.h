@@ -5,11 +5,32 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 
 #define HEADER "BEDROCK \xc2\xb7 built by erdem6.com"
+#define VERSION "0.2.0"
 
 /* Every check ends in exactly one of these. */
 enum verdict { V_PASS, V_FAIL, V_INCONCLUSIVE, V_ABSENT };
+
+/* record.c: everything one run found, for JSON, certificates and inventory.
+ * verdict() records each result; modules call fact() for identifying data
+ * ("system.serial", "cpu.brand", "disk.0.model"...). Keys are flat and dotted. */
+#define RECORD_MAX 512
+struct result { enum verdict v; char test[64]; char detail[384]; };
+struct fact { char key[48]; char val[160]; };
+extern struct result g_res[RECORD_MAX];
+extern int g_nres;
+extern struct fact g_fact[RECORD_MAX];
+extern int g_nfact;
+void record_reset(void);
+void record_result(enum verdict v, const char *test, const char *detail);
+void fact(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+const char *fact_get(const char *key);
+const char *verdict_name(enum verdict v);
+void json_str(FILE *o, const char *s);
+void iso_time(time_t t, char *buf, size_t n);
+void record_json(FILE *o);
 
 /* report.c: shared helpers */
 extern volatile sig_atomic_t g_stop; /* set by SIGINT: long tests stop early */

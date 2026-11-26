@@ -15,7 +15,7 @@ TARGETS := img v86 qemu-p3 qemu-uefi boottest
 ifeq ($(wildcard /opt/buildroot),)
 
 IMAGE  := bedrock-build
-VOLUME := bedrock-work
+VOLUME ?= bedrock-work
 TTY    := $(shell [ -t 0 ] && echo -t)
 
 $(TARGETS):

@@ -153,6 +153,9 @@ void gpu_show(FILE *o)
 			fprintf(o, "    display controller, driver %s, largest memory BAR %llu MiB (VRAM window, not always all VRAM)\n",
 				l > 0 ? strrchr(drv, '/') + 1 : "none", bar >> 20);
 			pcie_link(o, names[i]);
+			char key[32];
+			snprintf(key, sizeof key, "gpu.%d", gpus - 1);
+			fact(key, "%s %s [%04x:%04x]", vn, dn, ven, dev);
 		}
 		free(names[i]);
 	}

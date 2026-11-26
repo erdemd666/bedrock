@@ -240,6 +240,9 @@ void cpu_show(FILE *o)
 	fprintf(o, "  cache: L1d %u KiB, L1i %u KiB, L2 %u KiB, L3 %u KiB (0 = not reported)\n",
 		ci.l1d, ci.l1i, ci.l2, ci.l3);
 	fprintf(o, "  flags: %s\n", flags);
+	fact("cpu.brand", "%s", ci.brand[0] ? ci.brand : ci.vendor);
+	fact("cpu.id", "%s family %u model 0x%x stepping %u", ci.vendor, ci.family, ci.model, ci.stepping);
+	fact("cpu.threads", "%ld", sysconf(_SC_NPROCESSORS_ONLN));
 }
 
 static int is_cpu_hwmon(const char *name)
