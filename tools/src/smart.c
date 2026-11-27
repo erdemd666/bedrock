@@ -96,9 +96,11 @@ int sat_sense_regs(const uint8_t *s, size_t n, struct ata_regs *r)
 		r->err = d[3];
 		r->dev = d[12];
 		r->status = d[13];
-		r->lba = d[6] | d[8] << 8 | d[10] << 16;
+		/* SAT-3 table 63 and libata's ata_tf_to_descriptor(): bytes 7, 9, 11 hold LBA 7:0,
+		 * 15:8, 23:16; the high-order bytes 6, 8, 10 hold LBA 31:24, 39:32, 47:40. */
+		r->lba = d[7] | d[9] << 8 | d[11] << 16;
 		if (r->ext)
-			r->lba |= (unsigned long long)d[7] << 24 | (unsigned long long)d[9] << 32 | (unsigned long long)d[11] << 40;
+			r->lba |= (unsigned long long)d[6] << 24 | (unsigned long long)d[8] << 32 | (unsigned long long)d[10] << 40;
 		else
 			r->lba |= (unsigned long long)(d[12] & 0xf) << 24;
 		return 0;

@@ -436,13 +436,13 @@ static void test_record(void)
 	record_reset();
 }
 
-/* ATA Status Return descriptor (SAT-4 12.2.2.2) as libata builds it after a CK_COND command. */
+/* ATA Status Return descriptor as libata builds it after a CK_COND command (ata_tf_to_descriptor). */
 static void sense_regs(uint8_t s[32], int ext, const uint8_t lo[3], const uint8_t hob[3], uint8_t dev, uint8_t status)
 {
 	memset(s, 0, 32);
 	s[0] = 0x72, s[1] = 1, s[3] = 0x1d, s[7] = 14;
 	s[8] = 0x09, s[9] = 0x0c, s[10] = ext, s[12] = 1;
-	s[14] = lo[0], s[15] = hob[0], s[16] = lo[1], s[17] = hob[1], s[18] = lo[2], s[19] = hob[2];
+	s[14] = hob[0], s[15] = lo[0], s[16] = hob[1], s[17] = lo[1], s[18] = hob[2], s[19] = lo[2];
 	s[20] = dev, s[21] = status;
 }
 

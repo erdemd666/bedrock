@@ -1,7 +1,35 @@
 # Bedrock
 
-Bootable USB hardware diagnostics, from a Pentium III to a current desktop:
-RAM, CPU, disks, GPU and motherboard. built by erdem6.com
+A USB stick that tests, wipes and documents a used PC in one pass, from a
+Pentium III to a current desktop, and leaves a signed record anyone can check.
+built by erdem6.com
+
+## What it does
+
+- **Station run.** Plug in, boot, walk away. `bedrock.cfg` on the stick decides the
+  steps; the PC ends on a large PASS or FAIL screen with a QR code, and one row is
+  added to `inventory.csv` on the stick.
+- **Hardware tests.** CPU burn-in that watches heat, clocks, throttling and wrong
+  results (worn cooling, unstable or degraded silicon, Intel 13th/14th Gen microcode);
+  GPU compute and video-memory test (Intel and AMD; NVIDIA where the open driver
+  works); memory; SMART and surface scan; hidden disk areas (HPA/DCO); laptop
+  battery wear.
+- **Motherboard diagnosis.** Reads the errors the hardware has already reported
+  (machine checks, memory ECC, PCIe, SATA, NVMe, USB), checks PCIe and SATA links,
+  missing memory, voltages, CMOS battery and fans, and ranks the likely faulty part.
+  For machines that do not start, `no-post-guide.html` on the stick explains beep,
+  LED and POST codes.
+- **Functional checklist.** Every key, touchpad and buttons, speakers left and right,
+  microphone, webcam picture, each USB port, and whether Wi-Fi, Bluetooth and card
+  readers are present.
+- **Disk wipe with a certificate.** ATA Security Erase, NVMe Sanitize/Format or
+  overwrite, read back to verify, then a certificate with the fields NIST SP 800-88
+  Rev. 2 lists (Clear or Purge), signed with Ed25519. Check it at
+  [erdem6.com/verify](https://erdem6.com/verify); see [docs/CERTIFICATE.md](docs/CERTIFICATE.md).
+  Bedrock records those fields; it is not a certification of compliance.
+- **Resale sheet.** A printable one-page spec and health sheet for listing the PC.
+- **Fleet mode.** Boot many PCs over the network; each sends its record to one
+  server with a dashboard and CSV export. See [fleet/README.md](fleet/README.md).
 
 ## Use it
 
