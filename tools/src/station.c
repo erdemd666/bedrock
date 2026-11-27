@@ -290,6 +290,7 @@ int station_record(char *path, size_t n)
 	record_json(f);
 	fflush(f);
 	fsync(fileno(f)); /* the user pulls the stick right after */
+	sync(); /* FAT keeps a new file's directory entry in a separate block */
 	return fclose(f);
 }
 
@@ -309,7 +310,9 @@ static int inventory_append(time_t t, const char *res, const int cnt[4])
 	inventory_row(f, ts, res, cnt, rec);
 	fflush(f);
 	fsync(fileno(f));
-	return fclose(f);
+	int r = fclose(f);
+	sync(); /* FAT keeps a new file's directory entry in a separate block */
+	return r;
 }
 
 /* ---- QR code ---- */

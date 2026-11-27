@@ -507,6 +507,7 @@ void cert_html(FILE *o, const char *kind, const char *extra_json, const char *si
 static int close_synced(FILE *f)
 {
 	int r = fflush(f) | fsync(fileno(f)); /* the user pulls the stick right after */
+	sync(); /* FAT keeps a new file's directory entry in a separate block */
 	return fclose(f) | r;
 }
 

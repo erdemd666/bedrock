@@ -119,6 +119,7 @@ int report_save(char *path, size_t n)
 	report_run(f, "Report");
 	fflush(f);
 	fsync(fileno(f)); /* the user pulls the stick right after */
+	sync(); /* FAT keeps a new file's directory entry in a separate block */
 	if (fclose(f))
 		return -1;
 	/* The machine record next to it: same name, .json. */

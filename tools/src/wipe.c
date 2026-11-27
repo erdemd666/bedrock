@@ -732,6 +732,7 @@ static void wipe_disk(struct disk *x, const struct disk *d, int n, const char *m
 		fprintf(lf, "%s  model %s\n  %-12s Wipe: %s\n", ts, x->model, verdict_name(v), detail);
 		fflush(lf);
 		fsync(fileno(lf)); /* the user pulls the stick right after */
+		sync(); /* FAT keeps a new file's directory entry in a separate block */
 		printf(fclose(lf) ? "Could not save the wipe log.\n" : "Saved to %s\n", lp);
 	} else
 		printf("No writable USB partition: the wipe result was not saved.\n");
