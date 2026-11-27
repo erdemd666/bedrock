@@ -2,7 +2,7 @@ CFLAGS ?= -O2 -Wall -Wextra
 LDFLAGS ?= -static
 ALL_CFLAGS = -std=c11 -D_GNU_SOURCE $(CFLAGS)
 
-SRC = $(wildcard src/*.c)
+SRC = $(wildcard src/*.c) src/vendor/qrcodegen.c
 LIB = $(filter-out src/ui.c,$(SRC))
 
 bedrock: $(SRC) src/bedrock.h

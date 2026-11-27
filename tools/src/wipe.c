@@ -82,6 +82,32 @@ static int in_use(const char *name, const char *mounts, const char *cmdline)
 	return boot_disk_refuse(name, mounts, cmdline) || mounted_by_devno(name, mounts);
 }
 
+/* Mounts plus swaps (one list for in_use) and the kernel command line. */
+static void use_state(char *mounts, size_t nm, char *cmdline, size_t nc)
+{
+	char swaps[4096] = "";
+	mounts[0] = cmdline[0] = 0;
+	read_file("/proc/mounts", mounts, nm);
+	read_file("/proc/swaps", swaps, sizeof swaps);
+	read_file("/proc/cmdline", cmdline, nc);
+	strncat(mounts, "\n", nm - strlen(mounts) - 1);
+	strncat(mounts, swaps, nm - strlen(mounts) - 1);
+}
+
+/* Is this the disk Bedrock runs from, or otherwise mounted or swapped? */
+int disk_in_use(const char *name)
+{
+	char mounts[16384], cmdline[4096];
+	use_state(mounts, sizeof mounts, cmdline, sizeof cmdline);
+	return in_use(name, mounts, cmdline);
+}
+
+/* The only way an unattended wipe starts: bedrock.cfg must carry this exact text. */
+int wipe_auto_ok(const char *confirm)
+{
+	return confirm && !strcmp(confirm, WIPE_AUTO_CONFIRM);
+}
+
 static uint64_t splitmix(uint64_t x)
 {
 	x += 0x9e3779b97f4a7c15ULL;
@@ -432,17 +458,14 @@ static void min_str(int m, char *s, size_t n)
 		snprintf(s, n, "not given");
 }
 
+static void wipe_disk(struct disk *x, const struct disk *d, int n, const char *mounts, const char *cmdline, int autom);
+
 void wipe_run(void)
 {
 	struct disk d[32];
-	char mounts[16384] = "", swaps[4096] = "", cmdline[4096] = "", in[128], path[64];
-	char fw[96] = "", no[160] = "", method[128], why[256], est[2][32] = {"", ""};
+	char mounts[16384], cmdline[4096], in[128];
 	int n = disk_list(d, 32);
-	read_file("/proc/mounts", mounts, sizeof mounts);
-	read_file("/proc/swaps", swaps, sizeof swaps);
-	read_file("/proc/cmdline", cmdline, sizeof cmdline);
-	strncat(mounts, "\n", sizeof mounts - strlen(mounts) - 1);
-	strncat(mounts, swaps, sizeof mounts - strlen(mounts) - 1);
+	use_state(mounts, sizeof mounts, cmdline, sizeof cmdline);
 
 	printf("Wipe destroys everything on a disk, in one of two ways:\n"
 	       "  overwrite       writes zeros or random data over every block; right for hard disks,\n"
@@ -476,6 +499,35 @@ void wipe_run(void)
 		return;
 	}
 
+	wipe_disk(x, d, n, mounts, cmdline, 0);
+}
+
+/* Unattended wipe of every internal disk; the caller has checked wipe_auto_ok().
+ * Skips the disk Bedrock runs from and anything on USB, so the stick is never touched. */
+void wipe_auto(void)
+{
+	struct disk d[32];
+	char mounts[16384], cmdline[4096];
+	int n = disk_list(d, 32), done = 0;
+	use_state(mounts, sizeof mounts, cmdline, sizeof cmdline);
+	for (int i = 0; i < n; i++) {
+		if (in_use(d[i].name, mounts, cmdline) || on_usb(d[i].name)) {
+			printf("Wipe: skipping %s, the boot stick or a USB disk.\n", d[i].name);
+			continue;
+		}
+		done++;
+		if (!d[i].serial[0])
+			verdict(stdout, V_INCONCLUSIVE, "Wipe", "/dev/%s (%s) was not erased: it reports no serial number", d[i].name, d[i].model);
+		else
+			wipe_disk(&d[i], d, n, mounts, cmdline, 1);
+	}
+	if (!done)
+		verdict(stdout, V_ABSENT, "Wipe", "no internal disks to erase");
+}
+
+static void wipe_disk(struct disk *x, const struct disk *d, int n, const char *mounts, const char *cmdline, int autom)
+{
+	char in[128], path[64], fw[96] = "", no[160] = "", method[128], why[256], est[2][32] = {"", ""};
 	/* O_EXCL on a whole disk fails with EBUSY while any partition is mounted:
 	 * the kernel's own last check. */
 	snprintf(path, sizeof path, "/dev/%s", x->name);
@@ -519,7 +571,7 @@ void wipe_run(void)
 				s.enabled ? "ENABLED" : "not enabled", s.locked ? "LOCKED" : "not locked",
 				s.frozen ? "FROZEN" : "not frozen", s.enhanced ? "supported" : "not supported", est[0], est[1]);
 		}
-		if (s.supported && s.frozen && !s.enabled)
+		if (s.supported && s.frozen && !s.enabled && !autom) /* suspending needs the operator */
 			unfreeze(fd, x->id, &s);
 		snprintf(no, sizeof no, "%s",
 			!s.supported ? "the drive does not support the ATA security feature set" :
@@ -545,9 +597,14 @@ void wipe_run(void)
 			printf("  3  firmware erase: %s%s%s\n", fw, x->ata ? ", normal" : "", ssd ? "   (recommended)" : "");
 		if (fw[0] && s.enhanced)
 			printf("  4  firmware erase: %s, enhanced\n", fw);
-		if (ask("Method (Enter to cancel): ", in, sizeof in))
-			in[0] = 0;
-		int m = in[0] - '0';
+		int m;
+		if (autom) { /* firmware erase on an SSD when offered, else zeros */
+			m = fw[0] && ssd ? 3 : 1;
+		} else {
+			if (ask("Method (Enter to cancel): ", in, sizeof in))
+				in[0] = 0;
+			m = in[0] - '0';
+		}
 		if (m == 1 || m == 2) {
 			snprintf(method, sizeof method, "overwrite with %s", m == 2 ? "random data" : "zeros");
 			g_stop = 0;
@@ -566,7 +623,7 @@ void wipe_run(void)
 		       "or closing this screen will not halt it, and cutting power midway can leave the drive\n"
 		       "unusable. Drive's own time estimate: %s.\n",
 			method, x->name, x->ata ? est[enh] : "not given");
-		if (ask("Type ERASE to start: ", in, sizeof in) || strcmp(in, "ERASE")) {
+		if (!autom && (ask("Type ERASE to start: ", in, sizeof in) || strcmp(in, "ERASE"))) {
 			printf("Cancelled. Nothing was written.\n");
 			goto out;
 		}

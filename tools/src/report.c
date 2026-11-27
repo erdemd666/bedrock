@@ -117,5 +117,10 @@ int report_save(char *path, size_t n)
 	report_run(f, "Report");
 	fflush(f);
 	fsync(fileno(f)); /* the user pulls the stick right after */
-	return fclose(f);
+	if (fclose(f))
+		return -1;
+	/* The machine record next to it: same name, .json. */
+	char json[520];
+	snprintf(json, sizeof json, "%.*s.json", (int)strlen(path) - 4, path);
+	return station_record(json, sizeof json);
 }

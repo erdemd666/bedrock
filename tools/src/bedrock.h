@@ -144,5 +144,34 @@ uint64_t sample_hash(const uint8_t *p, size_t n);
 void erase_tally_add(struct erase_tally *t, const uint8_t *p, size_t n, uint64_t before);
 enum verdict erase_tally_verdict(const struct erase_tally *t, char *why, size_t n);
 void wipe_run(void);
+#define WIPE_AUTO_CONFIRM "ERASE ALL INTERNAL DISKS"
+int disk_in_use(const char *name);
+int wipe_auto_ok(const char *confirm);
+void wipe_auto(void);
+
+/* station.c: bedrock.cfg, the unattended station run and its exports */
+enum { MEM_QUICK, MEM_FULL, MEM_OFF };
+enum { SCAN_SAMPLED, SCAN_FULL, SCAN_OFF };
+enum { WIPE_OFF, WIPE_ASK, WIPE_AUTO };
+struct cfg {
+	char operator[64], organization[96], location[96], asset_tag[25], wipe_confirm[64];
+	int station, ask_asset_tag, cpu_seconds, memory, disk_scan, wipe, poweroff_when_done;
+};
+void cfg_defaults(struct cfg *c);
+void cfg_parse(struct cfg *c, const char *text);
+int cfg_load(struct cfg *c);
+void csv_field(FILE *o, const char *s);
+void inventory_header(FILE *o);
+void inventory_row(FILE *o, const char *date, const char *result, const int cnt[4], const char *record);
+enum verdict station_result(const int cnt[4]);
+void safe_id(const char *s, char *out, size_t n);
+int station_record(char *path, size_t n);
+#define STATION_QR_LEN 212 /* module matrix buffer for QR versions up to 6 */
+int station_qr_text(char *buf, size_t n, const char *asset, const char *serial, const char *model,
+	const char *result, const char *date, const char *record);
+int station_qr(const char *text, uint8_t qr[]);
+void station_qr_draw(FILE *o, const uint8_t *qr, int quiet, int row, int col);
+int station_run(int from_menu); /* 1: power off now */
+#define STATION_POWEROFF 10 /* exit status of bedrock --station: power off now */
 
 #endif

@@ -1,5 +1,6 @@
 /* Host tests for the pure parsers. Run from tests/: fixtures are read from fixtures/. */
 #include "bedrock.h"
+#include "vendor/qrcodegen.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -429,6 +430,224 @@ static void test_record(void)
 	record_reset();
 }
 
+#define QR_HELLO_HASH 0x5a5873fbf75041f1ULL
+
+static void test_cfg(void)
+{
+	struct cfg c;
+	cfg_defaults(&c);
+	CHECK(!c.station && !c.ask_asset_tag && c.cpu_seconds == 30 && c.memory == MEM_QUICK &&
+	      c.disk_scan == SCAN_SAMPLED && c.wipe == WIPE_OFF && !c.poweroff_when_done);
+	cfg_parse(&c, "\xef\xbb\xbf# station config\r\n"
+		"Operator =  Erdem Dogan  \r\n"
+		"organization=Acme # not a comment\r\n"
+		"\tlocation\t=\tShelf 3\r\n"
+		"   mode = station\r\n"
+		"ask_asset_tag = YES\r\n"
+		"cpu_seconds = 5\r\n"
+		"memory = full\r\n"
+		"disk_scan = Off\r\n"
+		"wipe = auto\r\n"
+		"wipe_confirm = ERASE ALL INTERNAL DISKS\r\n"
+		"poweroff_when_done = yes\r\n"
+		"bogus = 1\r\n"
+		"# wipe = off\r\n"
+		"no equals sign here\r\n"
+		"cpu_seconds = abc\r\n"
+		"memory = lots\r\n"
+		"= no key\r\n"
+		"last = no newline");
+	CHECK(!strcmp(c.operator, "Erdem Dogan") && !strcmp(c.organization, "Acme # not a comment"));
+	CHECK(!strcmp(c.location, "Shelf 3") && c.station && c.ask_asset_tag);
+	CHECK(c.cpu_seconds == 5); /* a bad number leaves the setting alone */
+	CHECK(c.memory == MEM_FULL && c.disk_scan == SCAN_OFF && c.wipe == WIPE_AUTO && c.poweroff_when_done);
+	CHECK(!strcmp(c.wipe_confirm, WIPE_AUTO_CONFIRM)); /* CRLF stripped */
+	cfg_parse(&c, "mode = menu\ncpu_seconds = 99999\nwipe = maybe\nask_asset_tag = perhaps\n");
+	CHECK(!c.station && c.cpu_seconds == 5 && c.wipe == WIPE_AUTO && c.ask_asset_tag);
+	cfg_defaults(&c);
+	cfg_parse(&c, "");
+	CHECK(!c.station && c.cpu_seconds == 30);
+}
+
+static void test_wipe_gate(void)
+{
+	struct cfg c;
+	CHECK(wipe_auto_ok("ERASE ALL INTERNAL DISKS"));
+	CHECK(!wipe_auto_ok("erase all internal disks") && !wipe_auto_ok("ERASE ALL INTERNAL DISKS ") &&
+	      !wipe_auto_ok("ERASE ALL INTERNAL DISK") && !wipe_auto_ok("ERASE") && !wipe_auto_ok("") && !wipe_auto_ok(NULL));
+	cfg_defaults(&c);
+	cfg_parse(&c, "wipe = auto\n"); /* no confirmation: nothing may run */
+	CHECK(c.wipe == WIPE_AUTO && !wipe_auto_ok(c.wipe_confirm));
+	cfg_parse(&c, "wipe_confirm = ERASE ALL INTERNAL DISKS   \r\n"); /* padding is not part of the value */
+	CHECK(wipe_auto_ok(c.wipe_confirm));
+	cfg_parse(&c, "wipe_confirm = \"ERASE ALL INTERNAL DISKS\"\n"); /* no quote handling: not an exact match */
+	CHECK(!wipe_auto_ok(c.wipe_confirm));
+	/* the stick is the disk Bedrock runs from, so the shared refusal covers it */
+	CHECK(boot_disk_refuse("sdb", "/dev/sdb1 /mnt/report vfat rw 0 0\n", ""));
+}
+
+static void csv_one(FILE *o, void *s) { csv_field(o, s); }
+
+/* Run fn into a string. */
+static char *slurp(void (*fn)(FILE *, void *), void *arg)
+{
+	char *buf = NULL;
+	size_t len = 0;
+	FILE *m = open_memstream(&buf, &len);
+	fn(m, arg);
+	fclose(m);
+	return buf;
+}
+
+static void test_csv(void)
+{
+	static const char *const in[] = {"plain", "", "a,b", "say \"hi\"", "two\nlines", "cr\rhere", "\"", " lead"};
+	static const char *const out[] = {"plain", "", "\"a,b\"", "\"say \"\"hi\"\"\"", "\"two\nlines\"", "\"cr\rhere\"", "\"\"\"\"", " lead"};
+	for (size_t i = 0; i < sizeof in / sizeof *in; i++) {
+		char *s = slurp(csv_one, (void *)in[i]);
+		CHECK(!strcmp(s, out[i]));
+		free(s);
+	}
+}
+
+static void inv_header(FILE *o, void *arg) { (void)arg; inventory_header(o); }
+
+static void inv_row(FILE *o, void *arg)
+{
+	const int cnt[4] = {12, 0, 0, 1};
+	(void)arg;
+	inventory_row(o, "2026-01-01T12:00:00Z", "PASS", cnt, "A-1-20260101-1200.json");
+}
+
+static void test_inventory(void)
+{
+	char *s = slurp(inv_header, NULL);
+	CHECK(!strcmp(s, "date,asset_tag,operator,organization,location,manufacturer,product,serial,board,cpu,"
+			 "threads,ram_mb,disk_count,disk_total_gb,disk_models,disk_serials,gpu,battery_health,result,"
+			 "pass,fail,inconclusive,record\r\n"));
+	free(s);
+	record_reset();
+	fact("station.asset_tag", "A-1");
+	fact("station.operator", "Erdem, \"E\"");
+	fact("station.organization", "Acme");
+	fact("station.location", "Shelf 3");
+	fact("station.boot_disk", "sdb");
+	fact("system.manufacturer", "LENOVO");
+	fact("system.product", "ThinkPad T480");
+	fact("system.serial", "PF123");
+	fact("board.manufacturer", "LENOVO");
+	fact("board.product", "20L5");
+	fact("cpu.brand", "Intel(R) Core(TM) i5-8350U");
+	fact("cpu.threads", "8");
+	fact("memory.installed_mb", "16384");
+	fact("memory.visible_mb", "15900");
+	fact("disk.0", "sda|Samsung SSD 860|S3Z9|500107862016|ATA SSD");
+	fact("disk.1", "sdb|BOOTSTICK|XYZ|8000000000|other"); /* the stick is not a PC disk */
+	fact("disk.2", "nvme0n1|WD, 256||256060514304|NVMe");
+	fact("gpu.0", "Intel UHD [8086:5917]");
+	s = slurp(inv_row, NULL);
+	CHECK(!strcmp(s, "2026-01-01T12:00:00Z,A-1,\"Erdem, \"\"E\"\"\",Acme,Shelf 3,LENOVO,ThinkPad T480,PF123,"
+			 "LENOVO 20L5,Intel(R) Core(TM) i5-8350U,8,16384,2,756.2,\"Samsung SSD 860; WD, 256\",S3Z9; -,"
+			 "Intel UHD [8086:5917],,PASS,12,0,0,A-1-20260101-1200.json\r\n"));
+	free(s);
+	fact("battery.health", "87%%");
+	fact("memory.installed_mb", "0"); /* unknown DIMM sizes: fall back to what the system sees */
+	s = slurp(inv_row, NULL);
+	CHECK(strstr(s, ",8,15900,2,") && strstr(s, ",Intel UHD [8086:5917],87%,PASS,"));
+	free(s);
+	record_reset();
+}
+
+static void test_station_names(void)
+{
+	char id[32];
+	int c1[4] = {5, 0, 0, 0}, c2[4] = {5, 1, 2, 0}, c3[4] = {5, 0, 1, 0}, c4[4] = {0, 0, 0, 3};
+	safe_id("To be filled by O.E.M.", id, sizeof id);
+	CHECK(!strcmp(id, "To-be-filled-by-O-E-M"));
+	safe_id("../etc/passwd", id, sizeof id);
+	CHECK(!strcmp(id, "etc-passwd"));
+	safe_id("0123456789012345678901234567890123456789", id, sizeof id);
+	CHECK(strlen(id) == 24);
+	safe_id("???", id, sizeof id);
+	CHECK(!id[0]);
+	CHECK(station_result(c1) == V_PASS && station_result(c2) == V_FAIL && station_result(c3) == V_INCONCLUSIVE);
+	CHECK(station_result(c4) == V_INCONCLUSIVE); /* nothing measured is not a pass */
+}
+
+static void test_station_record(void)
+{
+	char path[64] = "station-test.json", buf[4096] = "";
+	FILE *null = fopen("/dev/null", "w");
+	record_reset();
+	memset(g_count, 0, sizeof g_count);
+	fact("station.asset_tag", "A-1");
+	verdict(null, V_PASS, "CPU compute", "ok");
+	CHECK(station_record(path, sizeof path) == 0 && !strcmp(path, "station-test.json"));
+	CHECK(read_file(path, buf, sizeof buf) > 0 && strstr(buf, "\"station.asset_tag\":\"A-1\"") && strstr(buf, "\"pass\":1"));
+	remove(path);
+	fclose(null);
+	record_reset();
+	memset(g_count, 0, sizeof g_count);
+}
+
+static uint64_t qr_hash(const uint8_t *qr)
+{
+	uint64_t h = 0xcbf29ce484222325ULL;
+	int size = qrcodegen_getSize(qr);
+	for (int y = 0; y < size; y++)
+		for (int x = 0; x < size; x++)
+			h = (h ^ (qrcodegen_getModule(qr, x, y) ? 'X' : '.')) * 0x100000001b3ULL;
+	return h;
+}
+
+static void qr_plain(FILE *o, void *qr) { station_qr_draw(o, qr, 4, 0, 0); }
+
+static int utf8_len(const char *s, size_t n)
+{
+	int k = 0;
+	for (size_t i = 0; i < n; i++)
+		k += ((unsigned char)s[i] & 0xc0) != 0x80;
+	return k;
+}
+
+static void test_qr(void)
+{
+	uint8_t qr[STATION_QR_LEN];
+	char t[256], big[200];
+	int n;
+	n = station_qr("HELLO WORLD", qr);
+	CHECK(n == 21); /* version 1 */
+	for (int i = 0; i < 7; i++) /* top-left finder pattern */
+		CHECK(qrcodegen_getModule(qr, i, 0) && qrcodegen_getModule(qr, 0, i));
+	CHECK(!qrcodegen_getModule(qr, 7, 0) && qrcodegen_getModule(qr, 2, 2) && !qrcodegen_getModule(qr, 1, 1));
+	CHECK(qr_hash(qr) == QR_HELLO_HASH); /* the matrix a phone decoded back to HELLO WORLD */
+
+	n = station_qr_text(t, sizeof t, "A-1", "PF123", "LENOVO ThinkPad T480", "PASS", "2026-01-01", "A-1-20260101-1200.json");
+	CHECK(!strcmp(t, "BEDROCK1|A-1|PF123|LENOVO ThinkPad T480|PASS|2026-01-01|A-1-20260101-1200.json") && n == (int)strlen(t));
+	n = station_qr(t, qr);
+	CHECK(n > 0 && n <= 37); /* a typical record fits version 5 */
+	station_qr_text(t, sizeof t, "A|1", "S\n1", "x|y", "FAIL", "2026-01-01", "r.json");
+	CHECK(!strcmp(t, "BEDROCK1|A/1|S 1|x/y|FAIL|2026-01-01|r.json")); /* '|' and control characters cannot split fields */
+
+	memset(big, 'M', sizeof big - 1);
+	big[sizeof big - 1] = 0;
+	n = station_qr_text(t, sizeof t, "123456789012345678901234", "123456789012345678901234", big, "INCONCLUSIVE", "2026-01-01",
+		"123456789012345678901234-20260101-1200.json");
+	CHECK(n <= 134 && n == (int)strlen(t) && !strncmp(t, "BEDROCK1|123456789012345678901234|", 34));
+	CHECK(strstr(t, "|INCONCLUSIVE|2026-01-01|123456789012345678901234-20260101-1200.json") != NULL); /* only the model is cut */
+	CHECK(station_qr(t, qr) > 0); /* the worst case still fits version 6 */
+
+	/* drawing: two module rows per line, quiet zone of 4 around 21 modules = 29 columns, 15 lines */
+	station_qr("HELLO WORLD", qr);
+	char *s = slurp(qr_plain, qr), *line = s;
+	int lines = 0;
+	for (char *nl; (nl = strchr(line, '\n')); line = nl + 1, lines++)
+		CHECK(utf8_len(line, nl - line) == 29);
+	CHECK(lines == 15 && !strncmp(s, "                             \n", 30)); /* quiet rows are blank */
+	CHECK(strstr(s, "\xe2\x96\x88") && strstr(s, "\xe2\x96\x80") && strstr(s, "\xe2\x96\x84"));
+	free(s);
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +663,13 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_cfg();
+	test_wipe_gate();
+	test_csv();
+	test_inventory();
+	test_station_names();
+	test_station_record();
+	test_qr();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }
