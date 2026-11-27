@@ -129,6 +129,15 @@ struct batt_calc { double pct, full_wh, design_wh; }; /* -1 = unknown */
 int batt_load(const char *dir, struct batt *b);
 enum verdict batt_check(const struct batt *b, struct batt_calc *c, char *why, size_t n);
 void battery_show(FILE *o);
+/* fleet.c: upload the record to a fleet server over plain HTTP */
+struct fleet_url { char host[128], port[8], path[128]; };
+int fleet_url_parse(const char *url, struct fleet_url *u);
+size_t fleet_request(char *buf, size_t n, const struct fleet_url *u, size_t len);
+int fleet_status(const char *resp, size_t n);
+int fleet_find(const char *text, const char *key, char *out, size_t n);
+const char *fleet_url(void);
+int fleet_send(const char *url, const char *json, size_t len, char *err, size_t n);
+void fleet_upload(FILE *o);
 
 /* board.c */
 struct dimm {

@@ -5,6 +5,7 @@
 # With bedrock.report on the kernel command line, ttyS0 first runs one headless
 # report (used by the CI boot test); bedrock.station does the same for --station.
 # mode = station in bedrock.cfg runs the station run on tty1 before the menu.
+# In fleet mode without it, tty1 runs the report and the record goes to the fleet server.
 tty=$1
 case $tty in
 ttyS*)	grep -q "^${tty#ttyS}: uart:unknown" /proc/tty/driver/serial && exec sleep 2147483647 ;;
@@ -35,6 +36,12 @@ elif [ "$tty" = ttyS0 ] && grep -qw bedrock.station /proc/cmdline && [ ! -e /tmp
 	: >/tmp/station-done
 	/usr/bin/bedrock --station </dev/null
 	echo "bedrock --station: exit $?"
+# Fleet mode on the screen: test this PC, send the record, leave the result up.
+elif [ "$tty" = tty1 ] && ! grep -qw bedrock.report /proc/cmdline && [ ! -e /tmp/fleet-done ] && /usr/bin/bedrock --fleet-url >/dev/null; then
+	: >/tmp/fleet-done
+	/usr/bin/bedrock --report
+	printf '\nPress Enter for the menu.'
+	read -r _
 fi
 
 while :; do

@@ -62,6 +62,9 @@ model, serial, counts and a QR code. It leaves on the stick:
 USB disks are skipped. The QR text is
 `BEDROCK1|asset|serial|manufacturer product|result|date|record file`, at most 134 bytes.
 `src/vendor/` holds Nayuki's QR Code generator (MIT, licence next to it).
+With `bedrock.fleet=URL` on the boot line or `fleet_url = URL` in `bedrock.cfg`, `--report`
+also POSTs the record to that fleet server (plain HTTP, LAN only; see `../fleet/README.md`)
+and prints "Sent to fleet server" or the error. `bedrock --fleet-url` prints the URL, exit 1 if none.
 
 `--report` exit status: 0 no failures, 1 at least one FAIL, 2 could not write.
 Every check prints one of PASS, FAIL, INCONCLUSIVE or NOT PRESENT with its reason.

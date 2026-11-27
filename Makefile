@@ -8,9 +8,12 @@
 #   make qemu-uefi  boot bedrock.img: x86_64, OVMF, serial on stdio
 #   make boottest   headless report over serial on both, fails on timeout;
 #                   also saves the boot menus as out/menu-bios.png, out/menu-uefi.png
+#   make fleet      out/fleet/: the bedrock-fleet server (Go, built in a golang container)
+#                   and the two network-boot kernels bzImage-x86_64, bzImage-i686
+#   make fleettest  boot out/fleet/bzImage-x86_64 in QEMU and check the server got its record
 
 TARGETS := img v86 qemu-p3 qemu-uefi boottest
-.PHONY: $(TARGETS)
+.PHONY: $(TARGETS) fleet fleettest
 
 ifeq ($(wildcard /opt/buildroot),)
 
@@ -21,6 +24,17 @@ TTY    := $(shell [ -t 0 ] && echo -t)
 $(TARGETS):
 	docker build -q -t $(IMAGE) docker
 	docker run --rm -i $(TTY) -v "$(CURDIR)":/src -v $(VOLUME):/work $(IMAGE) make $@
+
+GOIMAGE := golang:1.24-alpine
+
+fleet:
+	docker build -q -t $(IMAGE) docker
+	docker run --rm -i $(TTY) -v "$(CURDIR)":/src -v $(VOLUME):/work $(IMAGE) make fleet-images
+	docker run --rm -v "$(CURDIR)/fleet":/src -v "$(CURDIR)/out/fleet":/out -w /src $(GOIMAGE) \
+		sh -c 'go vet ./... && go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags=-s -o /out/bedrock-fleet .'
+
+fleettest: fleet
+	docker run --rm -i $(TTY) -v "$(CURDIR)":/src $(IMAGE) sh os/board/bedrock/fleettest.sh /src/out/fleet
 
 else
 
@@ -42,6 +56,12 @@ v86: build-i686
 
 $(OUT)/bedrock.img:
 	$(MAKE) img
+
+# The kernels already hold the whole OS (initramfs): one file per architecture is all a netboot client needs.
+fleet-images: build-i686 build-x86_64
+	mkdir -p $(OUT)/fleet
+	cp $(W)/i686/images/bzImage $(OUT)/fleet/bzImage-i686
+	cp $(W)/x86_64/images/bzImage $(OUT)/fleet/bzImage-x86_64
 
 # Empty test disks: one each on IDE, AHCI and NVMe.
 DISKS := $(W)/disk-ide.img $(W)/disk-ahci.img $(W)/disk-nvme.img

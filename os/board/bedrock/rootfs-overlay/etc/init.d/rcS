@@ -30,3 +30,18 @@ done
 # Into the kernel log (dmesg); the CI boot test raises the loglevel to see it on serial.
 mountpoint -q /mnt/report && echo "bedrock: report partition $dev mounted at /mnt/report" >/dev/kmsg \
 	|| echo "bedrock: no BEDROCK partition found, reports stay in RAM" >/dev/kmsg
+
+# Fleet mode only (bedrock.fleet= on the boot line, or fleet_url in bedrock.cfg):
+# DHCP on the first wired NIC that has a link. Otherwise the network stays down.
+if /usr/bin/bedrock --fleet-url >/dev/null; then
+	for n in /sys/class/net/*; do
+		[ -e "$n/device" ] || continue # loopback and other virtual links have none
+		ip link set "${n##*/}" up
+		for i in 1 2 3 4 5 6; do # copper links take a few seconds to negotiate
+			read -r c <"$n/carrier" 2>/dev/null && [ "$c" = 1 ] && break
+			sleep 1
+		done
+		udhcpc -i "${n##*/}" -n -q -t 3 -T 3 >/dev/null 2>&1 && break
+		ip link set "${n##*/}" down
+	done
+fi
