@@ -606,6 +606,7 @@ static const struct step {
 	{"Battery", battery_show},
 	{"Disks and SMART", step_disks},
 	{"Motherboard diagnosis", board_diag},
+	{"Wi-Fi, Bluetooth, Ethernet, readers", functional_presence},
 	{"Disk surface scan", step_scan},
 	{"CPU stress", step_cpu},
 	{"Memory test", step_mem},

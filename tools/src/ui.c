@@ -145,6 +145,7 @@ static const struct item {
 	{'k', "Certificates, resale sheet and signing key", certs},
 	{'s', "Station run: test, document and export this PC", do_station},
 	{'b', "Motherboard diagnosis: find the faulty part", do_diag},
+	{'9', "Functional checklist: keys, touchpad, audio, camera, ports", functional_run},
 };
 
 int main(int argc, char **argv)

@@ -259,4 +259,26 @@ enum { MEM_MIXED = 1, MEM_ONE_CHANNEL = 2 };
 enum verdict mem_judge(const struct smbios *s, unsigned long long ram_mb, int bits, int *notes, char *why, size_t n);
 void board_diag(FILE *o);
 
+/* functional.c: the hands-on checklist (menu) and presence checks (station) */
+struct kbkey { uint16_t code; uint8_t row, block, col; const char *label; };
+const struct kbkey *kb_layout(int *n);
+int kb_index(unsigned code);
+int usb_port_path(const char *portname, char *out, size_t n);
+const char *usb_speed_name(double mbps);
+int ask_char(const char *prompt);
+void functional_presence(FILE *o);
+void functional_run(void);
+
+/* audio.c */
+#define LEVEL_FLOOR -96.0
+double level_dbfs(const int16_t *s, size_t n);
+int level_cols(double db, int width);
+enum verdict speaker_test(void);
+enum verdict mic_test(void);
+
+/* camera.c */
+void yuyv_rgb(int y, int u, int v, uint8_t rgb[3]);
+void fit_rect(unsigned sw, unsigned sh, unsigned dw, unsigned dh, unsigned *w, unsigned *h);
+enum verdict camera_test(void);
+
 #endif
