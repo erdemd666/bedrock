@@ -38,6 +38,31 @@ bedrock --report         # all non-destructive quick checks, plain text to stdou
 bedrock --report FILE    # same, to FILE
 ```
 
+```sh
+bedrock --station        # the station run (menu key s): test, document and export this PC
+```
+
+## Station run
+
+One pass over a PC: system info, disks and SMART, surface scan, CPU stress, memory,
+wipe, as set in `bedrock.cfg` on the stick's FAT partition (shipped commented, see
+`os/board/bedrock/bedrock.cfg`; `key = value`, whole-line `#` comments, LF or CRLF).
+With `mode = station` the image runs it by itself at boot, before the menu. The steps
+are the `steps[]` table in `src/station.c`; a new check is one line there.
+
+The run ends on a full-screen PASS, FAIL or CHECK (inconclusive) with the asset tag,
+model, serial, counts and a QR code. It leaves on the stick:
+
+- `inventory.csv`: one row per run (RFC 4180, CRLF), header created when missing
+- `bedrock/records/<asset tag or serial>-<yyyymmdd-hhmm>.json` and `.txt`
+- the "Save a report" menu entry writes the same `.json` next to its `.txt`
+
+`wipe = auto` erases every internal disk with no questions and only starts when
+`wipe_confirm` is exactly `ERASE ALL INTERNAL DISKS`; the disk Bedrock runs from and
+USB disks are skipped. The QR text is
+`BEDROCK1|asset|serial|manufacturer product|result|date|record file`, at most 134 bytes.
+`src/vendor/` holds Nayuki's QR Code generator (MIT, licence next to it).
+
 `--report` exit status: 0 no failures, 1 at least one FAIL, 2 could not write.
 Every check prints one of PASS, FAIL, INCONCLUSIVE or NOT PRESENT with its reason.
 

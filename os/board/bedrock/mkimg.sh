@@ -35,6 +35,7 @@ grub-mkimage -O i386-efi -p /boot/grub -o "$st/EFI/BOOT/BOOTIA32.EFI" $mods
 part="$st/part.img"
 mkfs.fat -C -F 32 -s 1 -n BEDROCK "$part" $((63 * 1024)) >/dev/null
 mcopy -s -i "$part" "$st/boot" "$st/EFI" ::
+mcopy -t -i "$part" "$here/bedrock.cfg" ::bedrock.cfg # -t: CRLF line ends, so Notepad shows it right
 syslinux --install --directory /boot/syslinux "$part"
 
 rm -f "$out"

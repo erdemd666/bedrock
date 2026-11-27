@@ -118,6 +118,14 @@ static void do_disks(void) { run_paged(disk_show); }
 static void do_stress(void) { run_paged(stress); }
 static void do_memtest(void) { run_paged(memtest); }
 
+static void do_station(void)
+{
+	if (station_run(1)) {
+		sync();
+		reboot(RB_POWER_OFF);
+	}
+}
+
 /* The main menu. Each feature adds one line here; keys are shown in this order. */
 static const struct item {
 	char key;
@@ -134,6 +142,7 @@ static const struct item {
 	{'8', "Wipe a disk (destroys data)", wipe},
 	{'a', "Battery health (laptops)", do_battery},
 	{'k', "Certificates, resale sheet and signing key", certs},
+	{'s', "Station run: test, document and export this PC", do_station},
 };
 
 int main(int argc, char **argv)
@@ -151,8 +160,12 @@ int main(int argc, char **argv)
 			return 2;
 		return g_count[V_FAIL] ? 1 : 0;
 	}
+	if (argc == 2 && !strcmp(argv[1], "--station")) {
+		g_color = 1;
+		return station_run(0) ? STATION_POWEROFF : 0;
+	}
 	if (argc >= 2) {
-		fprintf(stderr, "usage: bedrock [--report [file]]\n");
+		fprintf(stderr, "usage: bedrock [--report [file] | --station]\n");
 		return 2;
 	}
 	g_color = 1;
