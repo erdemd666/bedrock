@@ -1,0 +1,8 @@
+config BR2_PACKAGE_BEDROCK_GPU
+	bool "bedrock-gpu"
+	depends on BR2_PACKAGE_MESA3D_OPENGL_EGL
+	depends on BR2_PACKAGE_MESA3D_OPENGL_ES
+	depends on BR2_PACKAGE_MESA3D_GBM
+	help
+	  Headless GPU compute stress and video memory test that
+	  bedrock runs, built from tools/gpu in this repository.

@@ -119,7 +119,7 @@ enum verdict pcie_link_judge(const struct pcie_link *l, int gpu, char *why, size
 	return V_PASS;
 }
 
-static void pcie_link(FILE *o, const char *addr)
+void pcie_link(FILE *o, const char *addr)
 {
 	struct pcie_link l;
 	char test[64], why[160];

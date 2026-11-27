@@ -64,3 +64,7 @@ mtype -i "$fat" ::inventory.csv | tee "$t/inv.csv"
 [ "$(wc -l <"$t/inv.csv")" -eq 2 ] # header and one row
 grep -q 'Bedrock tests' "$t/inv.csv"
 mtype -i "$fat" ::bedrock/records/*.txt | grep -q 'Wipe'
+# No usable GPU in QEMU: the GPU stress must end without a FAIL, and on the 64-bit
+# system the software renderer must have run the GPU test program itself.
+grep -qE '(INCONCLUSIVE|NOT PRESENT) +GPU' "$log"
+case "$*" in *qemu-system-x86_64*) grep -q 'software renderer llvmpipe' "$log" ;; esac

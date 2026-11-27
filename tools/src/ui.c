@@ -67,7 +67,9 @@ static void run_paged(void (*fn)(FILE *))
 }
 
 static void sysinfo(FILE *o) { cpu_show(o); board_show(o); gpu_show(o); }
-static void stress(FILE *o) { cpu_stress(o, 60); }
+static int burn_secs;
+static void burnin(FILE *o) { cpu_burnin(o, burn_secs); }
+static void gpu(FILE *o) { gpu_stress(o, 300); }
 static void memtest(FILE *o) { mem_test(o, 0); }
 static struct disk scan_disk;
 static void scan(FILE *o) { disk_scan(o, &scan_disk, 0); }
@@ -115,7 +117,21 @@ static void certs(void) { screen(); if (cert_run()) pause_enter(); }
 static void do_sysinfo(void) { run_paged(sysinfo); }
 static void do_battery(void) { run_paged(battery_show); }
 static void do_disks(void) { run_paged(disk_show); }
-static void do_stress(void) { run_paged(stress); }
+static void do_gpu(void) { run_paged(gpu); }
+
+static void do_stress(void)
+{
+	char in[16];
+	screen();
+	printf("Every core runs checked work while clocks, temperatures, power and\n"
+	       "throttling are watched. Longer runs show worn cooling better.\n\n"
+	       "  1  2 minutes\n  2  10 minutes\n  3  30 minutes\n\n");
+	if (ask("Length (Enter to cancel): ", in, sizeof in))
+		return;
+	burn_secs = in[0] == '1' ? 120 : in[0] == '2' ? 600 : in[0] == '3' ? 1800 : 0;
+	if (burn_secs)
+		run_paged(burnin);
+}
 static void do_memtest(void) { run_paged(memtest); }
 static void do_diag(void) { run_paged(board_diag); }
 
@@ -133,19 +149,20 @@ static const struct item {
 	const char *label;
 	void (*run)(void);
 } menu[] = {
-	{'1', "System info: CPU, board, memory slots, sensors, PCI and GPU", do_sysinfo},
-	{'2', "Disks: identify and SMART health", do_disks},
-	{'3', "Disk surface scan (read-only)", pick_and_scan},
-	{'4', "CPU stress test (60 s, every core)", do_stress},
-	{'5', "Memory test (all free RAM)", do_memtest},
-	{'6', "Display test (colours and gradients)", display},
-	{'7', "Save a report to the USB stick", save_report},
-	{'8', "Wipe a disk (destroys data)", wipe},
-	{'a', "Battery health (laptops)", do_battery},
-	{'k', "Certificates, resale sheet and signing key", certs},
 	{'s', "Station run: test, document and export this PC", do_station},
-	{'b', "Motherboard diagnosis: find the faulty part", do_diag},
+	{'1', "System info: CPU, board, memory slots, sensors, PCI and GPU", do_sysinfo},
+	{'2', "Disks: SMART health and hidden areas", do_disks},
+	{'3', "Disk surface scan (read-only)", pick_and_scan},
+	{'4', "CPU stress and aging check", do_stress},
+	{'5', "GPU stress and video memory test", do_gpu},
+	{'6', "Memory test (all free RAM)", do_memtest},
+	{'7', "Motherboard diagnosis: find the faulty part", do_diag},
+	{'8', "Battery health (laptops)", do_battery},
 	{'9', "Functional checklist: keys, touchpad, audio, camera, ports", functional_run},
+	{'d', "Display test (colours and gradients)", display},
+	{'c', "Certificates, resale sheet and signing key", certs},
+	{'e', "Save a report to the USB stick", save_report},
+	{'x', "Wipe a disk (destroys data)", wipe},
 };
 
 int main(int argc, char **argv)

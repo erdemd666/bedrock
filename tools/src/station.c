@@ -551,10 +551,12 @@ static void step_scan(FILE *o)
 static void step_cpu(FILE *o)
 {
 	if (cfg.cpu_seconds)
-		cpu_stress(o, cfg.cpu_seconds);
+		cpu_burnin(o, cfg.cpu_seconds); /* the checked workloads plus heat, clock and error watch */
 	else
 		off(o, "CPU stress");
 }
+
+static void step_gpu(FILE *o) { gpu_stress(o, 120); }
 
 static void step_mem(FILE *o)
 {
@@ -610,6 +612,7 @@ static const struct step {
 	{"Disk surface scan", step_scan},
 	{"CPU stress", step_cpu},
 	{"Memory test", step_mem},
+	{"GPU stress and video memory", step_gpu},
 	{"Wipe", step_wipe},
 	{"Fleet server", fleet_upload},
 };
