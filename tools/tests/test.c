@@ -910,8 +910,10 @@ static char *slurp(void (*fn)(FILE *, void *), void *arg)
 
 static void test_csv(void)
 {
-	static const char *const in[] = {"plain", "", "a,b", "say \"hi\"", "two\nlines", "cr\rhere", "\"", " lead"};
-	static const char *const out[] = {"plain", "", "\"a,b\"", "\"say \"\"hi\"\"\"", "\"two\nlines\"", "\"cr\rhere\"", "\"\"\"\"", " lead"};
+	static const char *const in[] = {"plain", "", "a,b", "say \"hi\"", "two\nlines", "cr\rhere", "\"", " lead",
+		"=cmd()", "+1", "@x", "-x", "-12", "-"};
+	static const char *const out[] = {"plain", "", "\"a,b\"", "\"say \"\"hi\"\"\"", "\"two\nlines\"", "\"cr\rhere\"", "\"\"\"\"", " lead",
+		"'=cmd()", "'+1", "'@x", "'-x", "-12", "-"};
 	for (size_t i = 0; i < sizeof in / sizeof *in; i++) {
 		char *s = slurp(csv_one, (void *)in[i]);
 		CHECK(!strcmp(s, out[i]));
@@ -959,10 +961,10 @@ static void test_inventory(void)
 			 "LENOVO 20L5,Intel(R) Core(TM) i5-8350U,8,16384,2,756.2,\"Samsung SSD 860; WD, 256\",S3Z9; -,"
 			 "Intel UHD [8086:5917],,PASS,12,0,0,A-1-20260101-1200.json\r\n"));
 	free(s);
-	fact("battery.health", "87%%");
+	fact("battery.0.health_pct", "87");
 	fact("memory.installed_mb", "0"); /* unknown DIMM sizes: fall back to what the system sees */
 	s = slurp(inv_row, NULL);
-	CHECK(strstr(s, ",8,15900,2,") && strstr(s, ",Intel UHD [8086:5917],87%,PASS,"));
+	CHECK(strstr(s, ",8,15900,2,") && strstr(s, ",Intel UHD [8086:5917],87,PASS,"));
 	free(s);
 	record_reset();
 }

@@ -557,6 +557,9 @@ void wipe_run(void)
 		printf("Refused: %s reports no serial number, so it cannot be confirmed.\n", x->name);
 		return;
 	}
+	char hw[384];
+	if (hidden_area(x, hw, sizeof hw) > 0)
+		printf("\nWARNING: %s\nRemove the hidden area in the drive's setup first if it must be erased too.\n", hw);
 	printf("\nALL DATA on /dev/%s (%s, %.1f GB) will be destroyed. This cannot be undone.\n",
 		x->name, x->model, x->bytes / 1e9);
 	if (ask("Type the disk's serial number to confirm: ", in, sizeof in) || strcmp(in, x->serial)) {
@@ -583,8 +586,12 @@ void wipe_auto(void)
 		done++;
 		if (!d[i].serial[0])
 			verdict(stdout, V_INCONCLUSIVE, "Wipe", "/dev/%s (%s) was not erased: it reports no serial number", d[i].name, d[i].model);
-		else
+		else {
+			char hw[384];
+			if (hidden_area(&d[i], hw, sizeof hw) > 0)
+				verdict(stdout, V_FAIL, "Hidden area", "/dev/%s: %s", d[i].name, hw);
 			wipe_disk(&d[i], d, n, mounts, cmdline, 1);
+		}
 	}
 	if (!done)
 		verdict(stdout, V_ABSENT, "Wipe", "no internal disks to erase");

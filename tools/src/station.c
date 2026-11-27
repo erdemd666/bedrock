@@ -112,6 +112,10 @@ int cfg_load(struct cfg *c)
 
 void csv_field(FILE *o, const char *s)
 {
+	/* Firmware strings are untrusted: a leading = + @ (or - before a non-digit) would
+	 * run as a formula in a spreadsheet, so it is kept as text. */
+	if ((s[0] && strchr("=+@\t\r", s[0])) || (s[0] == '-' && s[1] && (s[1] < '0' || s[1] > '9')))
+		fputc('\'', o);
 	if (!s[strcspn(s, ",\"\r\n")]) {
 		fputs(s, o);
 		return;
@@ -217,7 +221,7 @@ void inventory_row(FILE *o, const char *date, const char *result, const int cnt[
 	const char *f[] = {date, fv("station.asset_tag"), fv("station.operator"), fv("station.organization"),
 		fv("station.location"), first("system.manufacturer", "board.manufacturer"),
 		first("system.product", "board.product"), fv("system.serial"), board, fv("cpu.brand"),
-		fv("cpu.threads"), ram, dcount, dtotal, dmodels, dserials, gpu, fv("battery.health"), result,
+		fv("cpu.threads"), ram, dcount, dtotal, dmodels, dserials, gpu, fv("battery.0.health_pct"), result,
 		p[V_PASS], p[V_FAIL], p[V_INCONCLUSIVE], record};
 	csv_row(o, f, sizeof f / sizeof *f);
 }
@@ -278,8 +282,8 @@ static int records_path(char *out, size_t n, const char *ext)
  * empty, it becomes the station location on the stick and is returned in path. */
 int station_record(char *path, size_t n)
 {
-	if (!path[0] && records_path(path, n, ".json"))
-		return -1;
+	if (!path[0]) /* the station's own record: signed when the stick has a key */
+		return signed_save("health", NULL, "records", rec_name, path, n) < 0 ? -1 : 0;
 	FILE *f = fopen(path, "w");
 	if (!f)
 		return -1;
@@ -599,11 +603,14 @@ static const struct step {
 	void (*run)(FILE *o);
 } steps[] = {
 	{"System information", step_sysinfo},
+	{"Battery", battery_show},
 	{"Disks and SMART", step_disks},
+	{"Motherboard diagnosis", board_diag},
 	{"Disk surface scan", step_scan},
 	{"CPU stress", step_cpu},
 	{"Memory test", step_mem},
 	{"Wipe", step_wipe},
+	{"Fleet server", fleet_upload},
 };
 
 static void prompt(const char *what, char *dst, size_t n)

@@ -66,7 +66,7 @@ void report_run(FILE *o, const char *title)
 	record_reset();
 	strftime(ts, sizeof ts, "%Y-%m-%d %H:%M UTC", gmtime(&t));
 	uname(&u);
-	fprintf(o, "%s\n%s, %s, kernel %s %s\n"
+	fprintf(o, "%s\n%s, %s, system %s %s\n"
 		   "Quick checks: 10 s CPU stress, up to 64 MiB RAM, 256-block sampled surface scan.\n\n",
 		HEADER, title, ts, u.release, u.machine);
 	cpu_show(o);
