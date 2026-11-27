@@ -1,6 +1,7 @@
 /* Host tests for the pure parsers. Run from tests/: fixtures are read from fixtures/. */
 #include "bedrock.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -429,6 +430,81 @@ static void test_record(void)
 	record_reset();
 }
 
+static void test_kb_layout(void)
+{
+	int n;
+	const struct kbkey *k = kb_layout(&n);
+	for (int i = 0; i < n; i++) {
+		CHECK(3 + k[i].col + strlen(k[i].label) <= 80); /* drawn from column 3 on an 80-column console */
+		if (i && k[i].row == k[i - 1].row && k[i].block == k[i - 1].block)
+			CHECK(k[i].col > k[i - 1].col + strlen(k[i - 1].label)); /* no overlap */
+		if (k[i].code)
+			CHECK(kb_index(k[i].code) == i); /* every key once */
+	}
+	CHECK(kb_index(30 /* KEY_A */) >= 0 && !strcmp(k[kb_index(30)].label, "A"));
+	CHECK(k[kb_index(103 /* KEY_UP */)].col == k[kb_index(108 /* KEY_DOWN */)].col); /* Up sits above Down */
+	CHECK(k[kb_index(76 /* KEY_KP5 */)].block == 2);
+	CHECK(kb_index(0) == -1 && kb_index(115 /* KEY_VOLUMEUP: not on the layout */) == -1);
+}
+
+static void test_yuyv(void)
+{
+	uint8_t c[3];
+	yuyv_rgb(235, 128, 128, c);
+	CHECK(c[0] == 255 && c[1] == 255 && c[2] == 255);
+	yuyv_rgb(16, 128, 128, c);
+	CHECK(c[0] == 0 && c[1] == 0 && c[2] == 0);
+	yuyv_rgb(81, 90, 240, c); /* BT.601 red */
+	CHECK(c[0] >= 253 && c[1] <= 2 && c[2] <= 2);
+	yuyv_rgb(41, 240, 110, c); /* BT.601 blue */
+	CHECK(c[0] <= 2 && c[1] <= 2 && c[2] >= 253);
+	yuyv_rgb(0, 0, 255, c); /* out of range clamps, no wrap */
+	CHECK(c[1] == 0 && c[2] == 0);
+	unsigned w, h;
+	fit_rect(640, 480, 1024, 768, &w, &h);
+	CHECK(w == 1024 && h == 768);
+	fit_rect(640, 480, 1920, 1080, &w, &h);
+	CHECK(w == 1440 && h == 1080);
+	fit_rect(1280, 720, 1024, 768, &w, &h);
+	CHECK(w == 1024 && h == 576);
+}
+
+static void test_level(void)
+{
+	static int16_t s[4800];
+	CHECK(level_dbfs(s, 4800) == LEVEL_FLOOR);
+	CHECK(level_dbfs(s, 0) == LEVEL_FLOOR);
+	for (int i = 0; i < 4800; i++)
+		s[i] = i & 1 ? 32767 : -32768; /* full-scale square: 0 dBFS */
+	CHECK(level_dbfs(s, 4800) > -0.01);
+	for (int i = 0; i < 4800; i++)
+		s[i] = 16384 * sin(2 * M_PI * i / 48); /* half-scale sine: -6 - 3 = -9 dBFS */
+	double db = level_dbfs(s, 4800);
+	CHECK(db > -9.1 && db < -8.9);
+	CHECK(level_cols(LEVEL_FLOOR, 50) == 0 && level_cols(-60, 50) == 0);
+	CHECK(level_cols(-30, 50) == 25 && level_cols(0, 50) == 50 && level_cols(3, 50) == 50);
+}
+
+static void test_usb_ports(void)
+{
+	char p[32];
+	CHECK(usb_port_path("usb2-port3", p, sizeof p) == 0 && !strcmp(p, "2-3"));
+	CHECK(usb_port_path("usb10-port12", p, sizeof p) == 0 && !strcmp(p, "10-12"));
+	CHECK(usb_port_path("1-1-port4", p, sizeof p) == 0 && !strcmp(p, "1-1.4"));
+	CHECK(usb_port_path("3-1.2-port1", p, sizeof p) == 0 && !strcmp(p, "3-1.2.1"));
+	CHECK(usb_port_path("1-0:1.0", p, sizeof p) == -1);
+	CHECK(usb_port_path("usb1", p, sizeof p) == -1);
+	CHECK(usb_port_path("power", p, sizeof p) == -1);
+	CHECK(usb_port_path("usb1-portx", p, sizeof p) == -1);
+	CHECK(!strcmp(usb_speed_name(1.5), "USB 1 1.5 Mbps"));
+	CHECK(!strcmp(usb_speed_name(12), "USB 1.1 12 Mbps"));
+	CHECK(!strcmp(usb_speed_name(480), "USB 2 480 Mbps"));
+	CHECK(!strcmp(usb_speed_name(5000), "USB 3 5 Gbps"));
+	CHECK(!strcmp(usb_speed_name(10000), "USB 3.1 10 Gbps"));
+	CHECK(!strcmp(usb_speed_name(20000), "USB 3.2 20 Gbps"));
+	CHECK(!strcmp(usb_speed_name(0), "-"));
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +520,10 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_kb_layout();
+	test_yuyv();
+	test_level();
+	test_usb_ports();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

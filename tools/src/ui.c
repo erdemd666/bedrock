@@ -130,6 +130,7 @@ static const struct item {
 	{'6', "Display test (colours and gradients)", display},
 	{'7', "Save a report to the USB stick", save_report},
 	{'8', "Wipe a disk (destroys data)", wipe},
+	{'9', "Functional checklist: keys, touchpad, audio, camera, ports", functional_run},
 };
 
 int main(int argc, char **argv)
