@@ -71,6 +71,7 @@ void report_run(FILE *o, const char *title)
 		HEADER, title, ts, u.release, u.machine);
 	cpu_show(o);
 	board_show(o);
+	battery_show(o);
 	gpu_show(o);
 	disk_show(o);
 	int n = disk_list(d, 32);

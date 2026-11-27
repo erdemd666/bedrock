@@ -9,16 +9,17 @@
 #include <unistd.h>
 
 /* dir: SAT_NONE, SAT_IN or SAT_OUT. */
-static int sg_io(int fd, const uint8_t *cdb, int cdblen, int dir, void *buf, unsigned len, unsigned tmo_ms)
+static int sg_io_sense(int fd, const uint8_t *cdb, int cdblen, int dir, void *buf, unsigned len, unsigned tmo_ms,
+	uint8_t sense[32])
 {
 	static const int sgdir[] = {SG_DXFER_NONE, SG_DXFER_FROM_DEV, SG_DXFER_TO_DEV};
-	uint8_t sense[32] = {0};
+	memset(sense, 0, 32);
 	sg_io_hdr_t h;
 	memset(&h, 0, sizeof h);
 	h.interface_id = 'S';
 	h.dxfer_direction = sgdir[dir];
 	h.cmd_len = cdblen;
-	h.mx_sb_len = sizeof sense;
+	h.mx_sb_len = 32;
 	h.dxfer_len = len;
 	h.dxferp = buf;
 	h.cmdp = (unsigned char *)cdb;
@@ -35,6 +36,12 @@ static int sg_io(int fd, const uint8_t *cdb, int cdblen, int dir, void *buf, uns
 		return key <= 1 ? 0 : -1;
 	}
 	return -1;
+}
+
+static int sg_io(int fd, const uint8_t *cdb, int cdblen, int dir, void *buf, unsigned len, unsigned tmo_ms)
+{
+	uint8_t sense[32];
+	return sg_io_sense(fd, cdb, cdblen, dir, buf, len, tmo_ms, sense);
 }
 
 /* ATA PASS-THROUGH(16) (SAT-4 6.2.2): PROTOCOL non-data / PIO data-in / PIO data-out;
@@ -71,6 +78,43 @@ int sat_cmd(int fd, uint8_t cmd, uint8_t feat, uint8_t lba_mid, uint8_t lba_hi, 
 int sat_out(int fd, uint8_t cmd, void *buf, unsigned tmo_ms)
 {
 	return sat(fd, buf ? SAT_OUT : SAT_NONE, cmd, 0, 0, 0, buf, tmo_ms);
+}
+
+/* ATA Status Return sense data descriptor (SAT-4 12.2.2.2): descriptor format sense, code 0x09,
+ * registers as low/high-order pairs. Without EXTEND only the low-order bytes and the device
+ * register's low nibble (LBA 27:24) are meaningful. */
+int sat_sense_regs(const uint8_t *s, size_t n, struct ata_regs *r)
+{
+	if (n < 8 || ((s[0] & 0x7f) != 0x72 && (s[0] & 0x7f) != 0x73))
+		return -1;
+	size_t end = 8u + s[7] < n ? 8u + s[7] : n;
+	for (size_t i = 8; i + 2 <= end; i += 2 + s[i + 1]) {
+		const uint8_t *d = s + i;
+		if (d[0] != 0x09 || d[1] < 0x0c || i + 14 > end)
+			continue;
+		r->ext = d[2] & 1;
+		r->err = d[3];
+		r->dev = d[12];
+		r->status = d[13];
+		r->lba = d[6] | d[8] << 8 | d[10] << 16;
+		if (r->ext)
+			r->lba |= (unsigned long long)d[7] << 24 | (unsigned long long)d[9] << 32 | (unsigned long long)d[11] << 40;
+		else
+			r->lba |= (unsigned long long)(d[12] & 0xf) << 24;
+		return 0;
+	}
+	return -1;
+}
+
+/* Non-data command with CK_COND set: libata answers with the output registers in the sense data
+ * (key RECOVERED ERROR, ASC/ASCQ 00h/1Dh), which sg_io() accepts. -1 when the drive or bridge
+ * aborts the command or returns no registers. Only for commands that read, never change. */
+int sat_regs(int fd, uint8_t cmd, int lba48, struct ata_regs *r)
+{
+	uint8_t cdb[16] = {[0] = 0x85, [1] = 3 << 1 | !!lba48, [2] = 0x20, [13] = 0x40, [14] = cmd}, sense[32];
+	if (sg_io_sense(fd, cdb, 16, SAT_NONE, NULL, 0, 10000, sense) || sat_sense_regs(sense, sizeof sense, r))
+		return -1;
+	return r->status & 0xa1 ? -1 : 0; /* BSY, DF or ERR */
 }
 
 /* SCSI INQUIRY, Unit Serial Number VPD page. */
