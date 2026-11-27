@@ -89,6 +89,7 @@ SHA-512), copied unchanged from the official release tarball `monocypher-4.0.2.t
 | `nvme_smart_qemu.bin` | NVMe log page 02h from a QEMU NVMe controller, read by `nvme_smart_log()` |
 | `latency_us.bin` | Read latencies (uint32 microseconds, `0xffffffff` = error) on every band edge |
 | `pci.ids` | Excerpt in pci.ids format |
+| `klog.txt` | Kernel log lines in the exact formats of Linux 6.12: machine checks, AER, libata, NVMe, USB, EDAC, ACPI noise |
 
 CPUID fixtures are records of six little-endian uint32: leaf, subleaf, eax, ebx, ecx, edx.
 Failing SMART cases are made in the test by patching the captured sectors.

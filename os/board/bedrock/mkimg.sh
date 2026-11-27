@@ -34,7 +34,9 @@ grub-mkimage -O i386-efi -p /boot/grub -o "$st/EFI/BOOT/BOOTIA32.EFI" $mods
 # 64 MiB disk, partition from 1 MiB.
 part="$st/part.img"
 mkfs.fat -C -F 32 -s 1 -n BEDROCK "$part" $((63 * 1024)) >/dev/null
-mcopy -s -i "$part" "$st/boot" "$st/EFI" ::
+# Readable on a phone or another PC when a machine does not start far enough to run Bedrock.
+cp "$here/no-post-guide.html" "$st/"
+mcopy -s -i "$part" "$st/boot" "$st/EFI" "$st/no-post-guide.html" ::
 mcopy -t -i "$part" "$here/bedrock.cfg" ::bedrock.cfg # -t: CRLF line ends, so Notepad shows it right
 syslinux --install --directory /boot/syslinux "$part"
 

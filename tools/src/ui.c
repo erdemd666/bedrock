@@ -117,6 +117,7 @@ static void do_battery(void) { run_paged(battery_show); }
 static void do_disks(void) { run_paged(disk_show); }
 static void do_stress(void) { run_paged(stress); }
 static void do_memtest(void) { run_paged(memtest); }
+static void do_diag(void) { run_paged(board_diag); }
 
 static void do_station(void)
 {
@@ -143,6 +144,7 @@ static const struct item {
 	{'a', "Battery health (laptops)", do_battery},
 	{'k', "Certificates, resale sheet and signing key", certs},
 	{'s', "Station run: test, document and export this PC", do_station},
+	{'b', "Motherboard diagnosis: find the faulty part", do_diag},
 };
 
 int main(int argc, char **argv)

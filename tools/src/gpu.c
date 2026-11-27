@@ -64,46 +64,74 @@ static int by_str(const void *a, const void *b)
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
-static void pcie_link(FILE *o, const char *addr)
+/* Link of the device at addr and the maximum of the port above it (what the
+ * slot is wired for). -1 for conventional PCI/AGP or no link attributes. */
+int pcie_link_read(const char *addr, struct pcie_link *l)
 {
-	char p[PATH_MAX + 32], real[PATH_MAX], cs[32] = "", ms[32] = "", ps[32] = "", test[64];
+	char p[PATH_MAX + 32], real[PATH_MAX];
+	memset(l, 0, sizeof *l);
+	l->pw = -1;
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s/current_link_width", addr);
-	long long cw = read_ll(p, -1);
+	l->cw = read_ll(p, -1);
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s/max_link_width", addr);
-	long long mw = read_ll(p, -1), pw = -1;
-	if (cw < 0 || mw <= 0)
-		return; /* conventional PCI/AGP, or kernel does not expose the link */
+	l->mw = read_ll(p, -1);
+	if (l->cw < 0 || l->mw <= 0)
+		return -1;
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s/current_link_speed", addr);
-	read_file(p, cs, sizeof cs);
+	read_file(p, l->cs_s, sizeof l->cs_s);
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s/max_link_speed", addr);
-	read_file(p, ms, sizeof ms);
-	/* The upstream port's maximum is what the slot is wired for. */
+	read_file(p, l->ms_s, sizeof l->ms_s);
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s", addr);
 	if (realpath(p, real) && strrchr(real, '/')) {
 		*strrchr(real, '/') = 0;
 		const char *parent = strrchr(real, '/') ? strrchr(real, '/') + 1 : real;
 		if (strchr(parent, ':') && strchr(parent, '.')) {
 			snprintf(p, sizeof p, "%s/max_link_width", real);
-			pw = read_ll(p, -1);
+			l->pw = read_ll(p, -1);
 			snprintf(p, sizeof p, "%s/max_link_speed", real);
-			read_file(p, ps, sizeof ps);
+			read_file(p, l->ps_s, sizeof l->ps_s);
 		}
 	}
-	long long want = pw > 0 && pw < mw ? pw : mw;
-	double c = atof(cs), m = atof(ms), u = atof(ps), wants = u > 0 && u < m ? u : m;
-	snprintf(test, sizeof test, "PCIe link %s", addr);
-	fprintf(o, "    link x%lld %s (card max x%lld %s", cw, cs, mw, ms);
-	if (pw > 0)
-		fprintf(o, ", slot max x%lld %s", pw, ps);
+	l->cs = atof(l->cs_s), l->ms = atof(l->ms_s), l->ps = atof(l->ps_s);
+	return 0;
+}
+
+/* Width below what both ends support is a fault (slot, riser, contacts). A lower
+ * speed is not: GPUs drop to 2.5 GT/s whenever they idle. */
+enum verdict pcie_link_judge(const struct pcie_link *l, int gpu, char *why, size_t n)
+{
+	long long want = l->pw > 0 && l->pw < l->mw ? l->pw : l->mw;
+	double wants = l->ps > 0 && l->ps < l->ms ? l->ps : l->ms;
+	if (l->cw == 0) {
+		snprintf(why, n, "link is down (device may be powered off)");
+		return V_INCONCLUSIVE;
+	}
+	if (l->cw < want) {
+		snprintf(why, n, "trained at x%lld although both ends support x%lld: reseat the card, clean the slot", l->cw, want);
+		return V_FAIL;
+	}
+	if (l->cs > 0 && wants > 0 && l->cs < wants) {
+		snprintf(why, n, gpu ? "width ok; speed %.1f GT/s below %.1f GT/s, normal while the GPU idles in power saving"
+				     : "width ok; speed %.1f GT/s below the %.1f GT/s both ends support", l->cs, wants);
+		return V_INCONCLUSIVE;
+	}
+	snprintf(why, n, "x%lld at full speed", l->cw);
+	return V_PASS;
+}
+
+static void pcie_link(FILE *o, const char *addr)
+{
+	struct pcie_link l;
+	char test[64], why[160];
+	if (pcie_link_read(addr, &l))
+		return;
+	fprintf(o, "    link x%lld %s (card max x%lld %s", l.cw, l.cs_s, l.mw, l.ms_s);
+	if (l.pw > 0)
+		fprintf(o, ", slot max x%lld %s", l.pw, l.ps_s);
 	fprintf(o, ")\n");
-	if (cw == 0)
-		verdict(o, V_INCONCLUSIVE, test, "link is down (device may be powered off)");
-	else if (cw < want)
-		verdict(o, V_FAIL, test, "trained at x%lld although both ends support x%lld: reseat the card, clean the slot", cw, want);
-	else if (c > 0 && wants > 0 && c < wants)
-		verdict(o, V_INCONCLUSIVE, test, "width ok; speed %s below %.1f GT/s, normal while the GPU idles in power saving", cs, wants);
-	else
-		verdict(o, V_PASS, test, "x%lld at full speed", cw);
+	snprintf(test, sizeof test, "PCIe link %s", addr);
+	enum verdict v = pcie_link_judge(&l, 1, why, sizeof why);
+	verdict(o, v, test, "%s", why);
 }
 
 void gpu_show(FILE *o)

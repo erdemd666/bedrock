@@ -144,12 +144,12 @@ static void sensors(FILE *o)
 
 /* A clock that reads earlier than a date we know has passed was reset:
  * on a PC that means the CMOS battery let go. */
-static void rtc_check(FILE *o, const char *bios_date)
+enum verdict rtc_check(FILE *o, const char *bios_date)
 {
 	long long t = read_ll("/sys/class/rtc/rtc0/since_epoch", -1);
 	if (t < 0) {
 		verdict(o, V_ABSENT, "CMOS clock", "no RTC exposed");
-		return;
+		return V_ABSENT;
 	}
 	int ref = atoi(__DATE__ + 7); /* build year */
 	const char *slash = strrchr(bios_date, '/');
@@ -161,24 +161,36 @@ static void rtc_check(FILE *o, const char *bios_date)
 	time_t tt = (time_t)t;
 	struct tm tm;
 	gmtime_r(&tt, &tm);
-	if (tm.tm_year + 1900 < ref)
+	if (tm.tm_year + 1900 < ref) {
 		verdict(o, V_FAIL, "CMOS clock", "RTC reads %04d-%02d-%02d, before %d: the clock was reset, the CMOS battery is likely flat",
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, ref);
-	else
-		verdict(o, V_PASS, "CMOS clock", "RTC reads %04d-%02d-%02d %02d:%02d UTC, not reset",
-			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min);
+		return V_FAIL;
+	}
+	verdict(o, V_PASS, "CMOS clock", "RTC reads %04d-%02d-%02d %02d:%02d UTC, not reset",
+		tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min);
+	return V_PASS;
 }
 
-void board_show(FILE *o)
+/* The firmware's SMBIOS table, parsed; 0 if there is none. */
+int smbios_read(struct smbios *s)
 {
-	static struct smbios s;
 	enum { MAX = 1 << 20 };
 	uint8_t *t = malloc(MAX);
 	FILE *f = fopen("/sys/firmware/dmi/tables/DMI", "rb");
 	size_t n = t && f ? fread(t, 1, MAX, f) : 0;
 	if (f)
 		fclose(f);
-	if (n && smbios_parse(t, n, &s) > 0) {
+	int found = n ? smbios_parse(t, n, s) : 0;
+	free(t);
+	if (!found)
+		memset(s, 0, sizeof *s);
+	return found > 0;
+}
+
+void board_show(FILE *o)
+{
+	static struct smbios s;
+	if (smbios_read(&s)) {
 		fprintf(o, "Board\n  %s %s (system: %s %s, serial %s)\n", s.board_maker, s.board_product,
 			s.sys_maker, s.sys_product, s.sys_serial[0] ? s.sys_serial : "-");
 		fprintf(o, "  BIOS %s %s, dated %s\n", s.bios_vendor, s.bios_ver, s.bios_date);
@@ -229,7 +241,6 @@ void board_show(FILE *o)
 		else
 			verdict(o, V_ABSENT, "Board", "firmware provides no SMBIOS/DMI tables");
 	}
-	free(t);
 	sensors(o);
 	rtc_check(o, s.bios_date);
 }
