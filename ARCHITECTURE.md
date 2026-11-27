@@ -88,6 +88,7 @@ a pure parser that the host test suite feeds with captured fixtures.
 | `gpu.c` | PCI config space, DRM/fbdev | Vendor/device from `pci.ids`, VRAM BAR size, PCIe link width/speed vs maximum. Full-screen display test: solid colours for dead pixels, gradients for banding. |
 | `wipe.c` | block device | Zero pass, random pass, ATA Secure Erase, NVMe Format/Sanitize. Refuses the boot stick. Requires typing the disk serial. Verifies by reading back a sample. |
 | `report.c` | results of the above | Writes `bedrock-<board>-<date>.txt` to the stick's FAT partition so the result leaves with the user. |
+| `station.c` | `bedrock.cfg` on the stick | The unattended run: a `steps[]` table of checks, a full-screen PASS/FAIL result with a QR code, one row in `inventory.csv`, and `bedrock/records/*.json` + `.txt` on the stick. `wipe = auto` needs an exact confirmation text and never touches the boot stick. |
 | `ui.c` | — | Plain VGA/fbcon text UI, no ncurses dependency: works on a 1999 graphics card and over a serial console. Header on every screen: `BEDROCK · built by erdem6.com`. |
 
 ## Repository layout
