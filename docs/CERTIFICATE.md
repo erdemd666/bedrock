@@ -45,3 +45,25 @@ these extra top-level keys:
 
 `category` is `Clear` or `Purge`, the NIST SP 800-88 Rev. 2 categories. Bedrock
 records the fields the guideline lists; it is not a certification of compliance.
+
+## Unsigned records
+
+When the stick holds no usable key (the key file cannot be created or read; an
+existing key file is never replaced), Bedrock still writes the record, but never
+signs it with a throwaway key. It then uses `"format": "bedrock-unsigned-1"`,
+no `signature`, `public_key` or `key_id`, and a `note` saying why. A checker
+shows it as unsigned. This is an addition; signed records are unchanged.
+
+## Files on the stick
+
+`bedrock/keys/station.key` (32-byte Ed25519 seed, raw) and `station.pub` (32-byte
+public key, raw). Wipe certificates go to `bedrock/certificates/`, health records
+and resale sheets to `bedrock/records/`, each `.json` with a printable `.html`
+next to it.
+
+## Sample
+
+`docs/sample-certificate.json` is a sanitization certificate for a made-up
+machine, signed with the **sample key**: a seed of 32 bytes `0x42`, published
+here, so it proves nothing about who signed. Key ID `afc32339a2c6d531`.
+Regenerate it with `make -C tools sample`.

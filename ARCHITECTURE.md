@@ -87,6 +87,7 @@ a pure parser that the host test suite feeds with captured fixtures.
 | `board.c` | `/sys/firmware/dmi/tables` (SMBIOS), hwmon, RTC | Board vendor/model, BIOS version and date, every DIMM slot (size, type, speed, part number), voltages and fans, CMOS battery sanity (RTC year/time drift). |
 | `gpu.c` | PCI config space, DRM/fbdev | Vendor/device from `pci.ids`, VRAM BAR size, PCIe link width/speed vs maximum. Full-screen display test: solid colours for dead pixels, gradients for banding. |
 | `wipe.c` | block device | Zero pass, random pass, ATA Secure Erase, NVMe Format/Sanitize. Refuses the boot stick. Requires typing the disk serial. Verifies by reading back a sample. |
+| `cert.c` | the record in memory, the stick's key | Signed records (docs/CERTIFICATE.md): Ed25519 key per stick, sanitization certificates after each wipe, health records, a printable page for each and a one-page resale sheet. |
 | `report.c` | results of the above | Writes `bedrock-<board>-<date>.txt` to the stick's FAT partition so the result leaves with the user. |
 | `ui.c` | — | Plain VGA/fbcon text UI, no ncurses dependency: works on a 1999 graphics card and over a serial console. Header on every screen: `BEDROCK · built by erdem6.com`. |
 

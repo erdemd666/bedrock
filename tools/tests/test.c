@@ -1,5 +1,6 @@
 /* Host tests for the pure parsers. Run from tests/: fixtures are read from fixtures/. */
 #include "bedrock.h"
+#include "vendor/monocypher-ed25519.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -630,8 +631,217 @@ static void test_battery(void)
 	rmdir(dir);
 }
 
-int main(void)
+static void unhex(const char *h, uint8_t *out)
 {
+	for (; h[0] && h[1]; h += 2)
+		sscanf(h, "%2hhx", out++);
+}
+
+/* RFC 8032 section 7.1, TEST 1 and TEST 2 */
+static void test_ed25519(void)
+{
+	static const struct { const char *seed, *pub, *msg, *sig; } v[] = {
+		{"9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+		 "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "",
+		 "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"},
+		{"4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+		 "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c", "72",
+		 "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"},
+	};
+	for (size_t i = 0; i < sizeof v / sizeof *v; i++) {
+		uint8_t seed[32], sk[64], pk[32], wpk[32], msg[1], sig[64], wsig[64];
+		size_t mn = strlen(v[i].msg) / 2;
+		unhex(v[i].seed, seed);
+		unhex(v[i].pub, wpk);
+		unhex(v[i].msg, msg);
+		unhex(v[i].sig, wsig);
+		crypto_ed25519_key_pair(sk, pk, seed);
+		CHECK(!memcmp(pk, wpk, 32));
+		crypto_ed25519_sign(sig, sk, msg, mn);
+		CHECK(!memcmp(sig, wsig, 64));
+		CHECK(crypto_ed25519_check(sig, pk, msg, mn) == 0);
+		sig[0] ^= 1;
+		CHECK(crypto_ed25519_check(sig, pk, msg, mn) != 0);
+	}
+}
+
+/* RFC 4648 section 10 */
+static void test_base64(void)
+{
+	static const char *v[][2] = {{"", ""}, {"f", "Zg=="}, {"fo", "Zm8="}, {"foo", "Zm9v"},
+		{"foob", "Zm9vYg=="}, {"fooba", "Zm9vYmE="}, {"foobar", "Zm9vYmFy"}};
+	char b[404];
+	uint8_t in[300], out[300];
+	for (size_t i = 0; i < sizeof v / sizeof *v; i++) {
+		size_t n = strlen(v[i][0]);
+		CHECK(b64_encode((const uint8_t *)v[i][0], n, b, sizeof b) == (int)strlen(v[i][1]));
+		CHECK(!strcmp(b, v[i][1]));
+		CHECK(b64_decode(v[i][1], out, sizeof out) == (int)n && !memcmp(out, v[i][0], n));
+	}
+	for (int n = 0; n < 300; n++) {
+		in[n] = (uint8_t)(n * 151 + 7);
+		CHECK(b64_encode(in, n, b, sizeof b) >= 0 && b64_decode(b, out, sizeof out) == n && !memcmp(in, out, n));
+	}
+	CHECK(b64_encode(in, 3, b, 4) == -1); /* no room for the terminator */
+	CHECK(b64_decode("Zm9vYg==", out, 3) == -1); /* no room */
+	CHECK(b64_decode("Zg=", out, 8) == -1 && b64_decode("Z===", out, 8) == -1);
+	CHECK(b64_decode("Zg=a", out, 8) == -1 && b64_decode("Zg==Zg==", out, 8) == -1);
+	CHECK(b64_decode("Zm9v!A==", out, 8) == -1 && b64_decode("Zm9 v", out, 8) == -1);
+}
+
+static void test_key_id(void)
+{
+	uint8_t pk[32];
+	char id[17];
+	unhex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", pk);
+	key_id(pk, id);
+	CHECK(!strcmp(id, "0e02a50225b4baaa")); /* first 16 hex digits of SHA-512, computed independently */
+}
+
+static void test_json_merge(void)
+{
+	char *buf = NULL;
+	size_t len;
+	const char *ok[] = {"{\"a\":1}", " { } ", NULL, "{\"b\":{\"c\":\"}\"}} \n"};
+	const char *bad[] = {"{\"a\":1}", "\"b\":2"};
+	FILE *m = open_memstream(&buf, &len);
+	CHECK(json_merge(m, ok, 4) == 0);
+	fclose(m);
+	CHECK(!strcmp(buf, "{\"a\":1,\"b\":{\"c\":\"}\"}}"));
+	free(buf);
+	m = open_memstream(&buf, &len);
+	CHECK(json_merge(m, bad, 2) == -1);
+	fclose(m);
+	free(buf);
+}
+
+static void test_nist(void)
+{
+	const char *why;
+	CHECK(!strcmp(nist_category("NVMe Sanitize, crypto erase", &why), "Purge"));
+	CHECK(!strcmp(nist_category("NVMe Sanitize, block erase", &why), "Purge"));
+	CHECK(!strcmp(nist_category("NVMe Format, crypto erase", &why), "Purge"));
+	CHECK(!strcmp(nist_category("NVMe Format, user data erase", &why), "Clear"));
+	CHECK(!strcmp(nist_category("ATA Security Erase, normal", &why), "Clear"));
+	CHECK(!strcmp(nist_category("ATA Security Erase, enhanced", &why), "Clear"));
+	CHECK(!strcmp(nist_category("overwrite with zeros", &why), "Clear"));
+	CHECK(!strcmp(nist_category("overwrite with random data", &why), "Clear") && strstr(why, "spare"));
+}
+
+static const char SAMPLE_EXTRA[] =
+	"{\"media\":{\"model\":\"SAMPLE SSD 500GB\",\"serial\":\"S0000SAMPLE\",\"kind\":\"SSD\","
+	"\"capacity_bytes\":500107862016,\"interface\":\"NVMe\"},\"sanitization\":{\"category\":\"Purge\","
+	"\"technique\":\"NVMe Sanitize, crypto erase\",\"details\":\"the drive's Sanitize command reaches all of its "
+	"media, spare and remapped blocks included, and its status log reported completion\","
+	"\"verification\":\"64 samples: 0 zero, 0 one fill byte, 64 other data changed by the erase, 0 unchanged, "
+	"0 unreadable or not comparable\",\"result\":\"PASS\",\"started\":\"2026-11-26T10:00:00Z\","
+	"\"finished\":\"2026-11-26T10:00:42Z\"}}";
+
+/* A made-up machine with one wipe, as wipe_run() records it. */
+static void sample_record(void)
+{
+	record_reset();
+	fact("system.manufacturer", "SAMPLE (not a real machine)");
+	fact("system.product", "Sample PC <1>");
+	fact("system.serial", "SAMPLE-0001");
+	fact("cpu.brand", "Sample CPU");
+	fact("memory.installed_mb", "16384");
+	fact("disk.0", "nvme0n1|SAMPLE SSD 500GB|S0000SAMPLE|500107862016|NVMe");
+	fact("station.operator", "Sample Operator");
+	fact("station.asset_tag", "A-0001");
+	record_result(V_PASS, "Wipe", "/dev/nvme0n1 (serial S0000SAMPLE); method: NVMe Sanitize, crypto erase; took 0 min 42 s");
+}
+
+static char *envelope(const char *kind, const char *extra, char sig[89])
+{
+	char *buf = NULL;
+	size_t len;
+	FILE *m = open_memstream(&buf, &len);
+	CHECK(cert_envelope(m, kind, extra, sig) == 0);
+	fclose(m);
+	return buf;
+}
+
+static void test_envelope(void)
+{
+	uint8_t seed[32], pl[8192];
+	char id[17], sig[89], *p;
+	unhex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", seed);
+	cert_key_seed(seed);
+	sample_record();
+	char *e = envelope("sanitization", SAMPLE_EXTRA, sig);
+	CHECK(strstr(e, "\"format\": \"bedrock-signed-1\"") && strstr(e, "\"key_id\": \"0e02a50225b4baaa\""));
+	CHECK(cert_verify(e, id) == 1 && !strcmp(id, "0e02a50225b4baaa"));
+	CHECK(strlen(sig) == 88 && strstr(e, sig));
+
+	/* the payload is kind, station identity, the record, then the extras, at the top level */
+	char *b = strstr(e, "\"payload\": \"") + 12;
+	*strchr(b, '"') = 0;
+	int n = b64_decode(b, pl, sizeof pl - 1);
+	CHECK(n > 0);
+	pl[n > 0 ? n : 0] = 0;
+	p = (char *)pl;
+	CHECK(!strncmp(p, "{\"kind\":\"sanitization\",\"operator\":\"Sample Operator\",\"asset_tag\":\"A-0001\",\"tool\":", 80));
+	CHECK(strstr(p, "\"system.serial\":\"SAMPLE-0001\"") && strstr(p, "\"verdict\":\"PASS\""));
+	CHECK(strstr(p, "},\"media\":{\"model\":\"SAMPLE SSD 500GB\"") && strstr(p, "\"category\":\"Purge\""));
+	CHECK(n > 3 && p[n - 1] == '}' && p[n - 2] == '}' && p[n - 3] == '"');
+	b[strlen(b)] = '"';
+
+	/* change one payload byte: still valid base64, no longer the signed bytes */
+	char *t = strdup(e), *q = strstr(t, "\"payload\": \"") + 40;
+	*q = *q == 'A' ? 'B' : 'A';
+	CHECK(cert_verify(t, id) == 0);
+	free(t);
+	t = strdup(e); /* relabel the kind outside the signature */
+	memcpy(strstr(t, "\"kind\": \"sanitization\"") + 9, "health\"     ", 12);
+	CHECK(cert_verify(t, id) == 0);
+	free(t);
+	t = strdup(e); /* a key ID that is not this key's */
+	strstr(t, "0e02a50225b4baaa")[0] = '1';
+	CHECK(cert_verify(t, id) == 0);
+	free(t);
+	t = strdup(e);
+	memcpy(strstr(t, "signed-1"), "signed-9", 8);
+	CHECK(cert_verify(t, id) == -1);
+	free(t);
+	CHECK(cert_verify("{}", id) == -1 && cert_verify("", id) == -1);
+	free(e);
+
+	/* printable twin: extras as sections, everything escaped */
+	char *h = NULL;
+	size_t hl;
+	FILE *m = open_memstream(&h, &hl);
+	cert_html(m, "sanitization", SAMPLE_EXTRA, sig, "x.json");
+	fclose(m);
+	CHECK(strstr(h, "<h1>Data sanitization certificate</h1>") && strstr(h, "<h2>Media</h2>"));
+	CHECK(strstr(h, "<tr><th>Category</th><td>Purge</td></tr>") && strstr(h, "<tr><th>Operator</th><td>Sample Operator</td></tr>"));
+	CHECK(strstr(h, "<th>Capacity</th><td>500107862016 bytes (500.1 GB)</td>") && strstr(h, "Sample PC &lt;1&gt;"));
+	CHECK(strstr(h, "0e02a50225b4baaa") && strstr(h, "verify") && !strstr(h, "Sample PC <1>"));
+	free(h);
+	m = open_memstream(&h, &hl);
+	sheet_html(m, "x.json", "0e02a50225b4baaa");
+	fclose(m);
+	CHECK(strstr(h, "<h1>SAMPLE (not a real machine) Sample PC &lt;1&gt;</h1>") && strstr(h, "<td>16 GB</td>"));
+	CHECK(strstr(h, "SAMPLE SSD 500GB, 500 GB, NVMe; health (SMART): not checked"));
+	CHECK(strstr(h, "All 1 checks passed"));
+	free(h);
+	record_reset();
+}
+
+/* docs/sample-certificate.json: the sample sanitization certificate, sample key = 32 bytes of 0x42 */
+static int write_sample(void)
+{
+	uint8_t seed[32];
+	memset(seed, 0x42, sizeof seed);
+	cert_key_seed(seed);
+	sample_record();
+	return cert_envelope(stdout, "sanitization", SAMPLE_EXTRA, NULL) != 0;
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 2 && !strcmp(argv[1], "--sample"))
+		return write_sample();
 	test_cpuid();
 	test_workloads();
 	test_smbios();
@@ -648,6 +858,12 @@ int main(void)
 	test_sense_regs();
 	test_hidden();
 	test_battery();
+	test_ed25519();
+	test_base64();
+	test_key_id();
+	test_json_merge();
+	test_nist();
+	test_envelope();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

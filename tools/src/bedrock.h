@@ -168,6 +168,23 @@ struct erase_tally { int zero, filled, changed, unchanged, unread; unsigned fill
 uint64_t sample_hash(const uint8_t *p, size_t n);
 void erase_tally_add(struct erase_tally *t, const uint8_t *p, size_t n, uint64_t before);
 enum verdict erase_tally_verdict(const struct erase_tally *t, char *why, size_t n);
+const char *nist_category(const char *method, const char **why);
 void wipe_run(void);
+
+/* cert.c: signed records, format in docs/CERTIFICATE.md */
+int b64_encode(const uint8_t *in, size_t n, char *out, size_t outn);
+int b64_decode(const char *in, uint8_t *out, size_t outn);
+void key_id(const uint8_t pub[32], char id[17]);
+void cert_key_seed(const uint8_t seed[32]);
+int cert_key(char *msg, size_t n);
+int json_merge(FILE *o, const char *const *obj, int n);
+int cert_envelope(FILE *o, const char *kind, const char *extra_json, char sig[89]);
+int cert_verify(const char *json, char key_id[17]);
+void cert_html(FILE *o, const char *kind, const char *extra_json, const char *sig, const char *file);
+int signed_save(const char *kind, const char *extra_json, const char *dir, const char *stem, char *path, size_t n);
+void sheet_html(FILE *o, const char *record_file, const char *kid);
+int sheet_save(char *path, size_t n);
+void cert_save_health(FILE *o);
+int cert_run(void); /* menu; 1 if there is a result to read */
 
 #endif
