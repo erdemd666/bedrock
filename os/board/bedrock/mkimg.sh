@@ -31,14 +31,16 @@ mods="part_msdos fat normal configfile test echo serial terminal linux chain efi
 grub-mkimage -O x86_64-efi -p /boot/grub -o "$st/EFI/BOOT/BOOTX64.EFI" $mods
 grub-mkimage -O i386-efi -p /boot/grub -o "$st/EFI/BOOT/BOOTIA32.EFI" $mods
 
-# 64 MiB disk, partition from 1 MiB.
+# Disk sized to the files plus room for reports (at least 64 MiB), partition from 1 MiB.
+mb=$(($(du -sm "$st" | cut -f1) + 32))
+[ $mb -ge 64 ] || mb=64
 part="$st/part.img"
-mkfs.fat -C -F 32 -s 1 -n BEDROCK "$part" $((63 * 1024)) >/dev/null
+mkfs.fat -C -F 32 -s 1 -n BEDROCK "$part" $(((mb - 1) * 1024)) >/dev/null
 mcopy -s -i "$part" "$st/boot" "$st/EFI" ::
 syslinux --install --directory /boot/syslinux "$part"
 
 rm -f "$out"
-truncate -s 64M "$out"
+truncate -s ${mb}M "$out"
 echo 'start=2048, type=c, bootable' | sfdisk -q "$out"
 dd if=/usr/lib/syslinux/mbr/mbr.bin of="$out" bs=440 count=1 conv=notrunc status=none
 dd if="$part" of="$out" bs=1M seek=1 conv=notrunc status=none

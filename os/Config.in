@@ -1,1 +1,2 @@
 source "$BR2_EXTERNAL_BEDROCK_PATH/package/bedrock/Config.in"
+source "$BR2_EXTERNAL_BEDROCK_PATH/package/bedrock-gpu/Config.in"

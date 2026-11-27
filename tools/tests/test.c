@@ -1,10 +1,13 @@
 /* Host tests for the pure parsers. Run from tests/: fixtures are read from fixtures/. */
 #include "bedrock.h"
+#include "../gpu/stressref.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 static int checks, fails;
+static int quiet_fails;
+#define CHECK_QUIET(c) do { if (!(c)) quiet_fails++; } while (0) /* inside long loops */
 #define CHECK(c) do { checks++; if (!(c)) { fails++; fprintf(stderr, "%s:%d: FAILED: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 static uint8_t *load(const char *name, size_t *n)
@@ -429,6 +432,151 @@ static void test_record(void)
 	record_reset();
 }
 
+static void test_sensors(void)
+{
+	struct hwmon h;
+	CHECK(hwmon_read("fixtures/hwmon-amdgpu", &h) == 3);
+	CHECK(!strcmp(h.name, "amdgpu"));
+	CHECK(hwmon_temp(&h, "edge") == 61000 && hwmon_temp(&h, "junction") == 97000 && hwmon_temp(&h, "mem") == 88000);
+	CHECK(hwmon_temp(&h, NULL) == 97000 && hwmon_temp(&h, "vddgfx") == NO_TEMP);
+	CHECK(h.crit == 100000 && h.tcrit[1] == 110000);
+	CHECK(h.power_uw == 231000000 && h.fan_rpm == 1650 && h.freq_hz == 2450000000LL);
+	CHECK(hwmon_read("fixtures/hwmon-coretemp", &h) == 3); /* temp1, temp2 and, past the gap, temp6 */
+	CHECK(hwmon_temp(&h, NULL) == 85000 && hwmon_temp(&h, "Package id 0") == 82000);
+	CHECK(h.power_uw == -1 && h.fan_rpm == -1);
+	CHECK(hwmon_read("fixtures/no-such-dir", &h) == 0);
+
+	long long range, e = rapl_energy("fixtures/rapl0", &range);
+	CHECK(e == 1234567 && range == 262143328850LL);
+	CHECK(rapl_watts(1000000, 61000000, range, 2) == 30.0);
+	double w = rapl_watts(range - 9000000, 1000000, range, 1); /* counter wrapped */
+	CHECK(w > 9.99 && w < 10.01);
+	CHECK(rapl_watts(5, 1, 0, 1) < 0 && rapl_watts(-1, 5, range, 1) < 0);
+
+	CHECK(kmsg_kind("mce: [Hardware Error]: Machine check events logged") == 1);
+	CHECK(kmsg_kind("mce: [Hardware Error]: CPU 3: Machine Check: 0 Bank 1: 9000004000010005") == 1);
+	CHECK(kmsg_kind("mce: CPU2: Core temperature above threshold, cpu clock throttled (total events = 7)") == 2);
+	CHECK(kmsg_kind("usb 1-1: new high-speed USB device") == 0);
+
+	long long khz[4] = {0};
+	CHECK(cpuinfo_mhz("processor\t: 0\ncpu MHz\t\t: 4800.500\n\nprocessor\t: 1\ncpu MHz\t\t: 799.998\n", khz, 4) == 2);
+	CHECK(khz[0] == 4800500 && khz[1] == 799998);
+}
+
+static void test_burn_verdicts(void)
+{
+	char why[384];
+	struct burn b = {.secs = 600, .t0 = 40000, .tmax = 84000, .crit = 100000, .t_crit_s = -1,
+			 .rise_first_min = 35, .slope_end = 0.3, .throttle = 0, .watts = 95, .clock_ratio = 1.3};
+	CHECK(burn_thermal(&b, why, sizeof why) == V_PASS);
+	CHECK(burn_heatup(&b, why, sizeof why) == V_PASS);
+	CHECK(burn_clock(&b, why, sizeof why) == V_PASS);
+
+	b.throttle = 12; /* worn cooling on a 95 W part */
+	CHECK(burn_thermal(&b, why, sizeof why) == V_FAIL && strstr(why, "thermal paste"));
+	b.watts = 250; /* unlocked chip on an unlimited board: not proof of wear */
+	CHECK(burn_thermal(&b, why, sizeof why) == V_INCONCLUSIVE);
+	b.watts = 95, b.throttle = 0, b.t_crit_s = 125;
+	CHECK(burn_thermal(&b, why, sizeof why) == V_FAIL && strstr(why, "after 2:05"));
+	b.clock_ratio = 0.6; /* low clock explained by heat */
+	CHECK(burn_clock(&b, why, sizeof why) == V_INCONCLUSIVE);
+	b.t_crit_s = -1; /* same clock, cool chip: power delivery or BIOS */
+	CHECK(burn_clock(&b, why, sizeof why) == V_FAIL && strstr(why, "voltage regulators"));
+	b.clock_ratio = 0.85;
+	CHECK(burn_clock(&b, why, sizeof why) == V_INCONCLUSIVE);
+	b.clock_ratio = 0;
+	CHECK(burn_clock(&b, why, sizeof why) == V_INCONCLUSIVE);
+
+	b.slope_end = 3.5;
+	CHECK(burn_heatup(&b, why, sizeof why) == V_FAIL);
+	b.secs = 120;
+	CHECK(burn_heatup(&b, why, sizeof why) == V_INCONCLUSIVE);
+
+	struct burn none = {.secs = 600, .t0 = NO_TEMP, .tmax = NO_TEMP, .t_crit_s = -1, .throttle = -1, .watts = -1};
+	CHECK(burn_thermal(&none, why, sizeof why) == V_ABSENT);
+	CHECK(burn_heatup(&none, why, sizeof why) == V_ABSENT);
+	none.tmax = 70000; /* AMD: a sensor, but no counter and no limit */
+	CHECK(burn_thermal(&none, why, sizeof why) == V_INCONCLUSIVE);
+
+	/* 8 P-cores at 5.0 GHz (one held at 3.0), 4 E-cores at 3.8 GHz */
+	long long khz[12], grp[12];
+	double r;
+	for (int i = 0; i < 12; i++) {
+		khz[i] = i < 8 ? 5000000 : 3800000;
+		grp[i] = i < 8 ? 5800000 : 4300000;
+	}
+	CHECK(core_outlier(khz, grp, 12, &r) == -1); /* E-cores are not slow P-cores */
+	khz[5] = 3000000;
+	CHECK(core_outlier(khz, grp, 12, &r) == 5 && r > 0.59 && r < 0.61);
+	khz[5] = 0; /* not measured */
+	CHECK(core_outlier(khz, grp, 12, &r) == -1);
+}
+
+static void test_raptor(void)
+{
+	CHECK(raptor_check(6, 0xb7, "13th Gen Intel(R) Core(TM) i9-13900K") == 1);
+	CHECK(raptor_check(6, 0xb7, "Intel(R) Core(TM) i7-14700") == 1);
+	CHECK(raptor_check(6, 0xb7, "13th Gen Intel(R) Core(TM) i9-13980HX") == 0);
+	CHECK(raptor_check(6, 0xbf, "13th Gen Intel(R) Core(TM) i5-13400") == 0);
+	CHECK(raptor_check(6, 0xba, "13th Gen Intel(R) Core(TM) i7-1355U") == 0);
+	CHECK(raptor_check(6, 0x97, "12th Gen Intel(R) Core(TM) i7-12700K") == -1);
+	CHECK(raptor_check(0x19, 0xb7, "AMD Ryzen") == -1);
+	struct cpu_info ci = decode("cpuid_i5-13500h.bin"); /* Raptor Lake-P laptop */
+	CHECK(raptor_check(ci.family, ci.model, ci.brand) == 0);
+}
+
+static void test_gpu(void)
+{
+	/* Every float in the shader's chain is an integer below 2^24, so the CPU
+	 * reference must equal the same chain done in exact integer arithmetic. */
+	for (uint32_t i = 0; i < 2000; i += 7) {
+		uint32_t x = i * 2654435761u + 12345u;
+		uint64_t f = 0;
+		for (int k = 0; k < 512; k++) {
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			x = x * 1664525u + 1013904223u;
+			f += (uint64_t)(x & 1023u) * ((x >> 10) & 1023u);
+			CHECK_QUIET(f < 16777216);
+			if (f >= 8388608)
+				f -= 8388608;
+		}
+		CHECK_QUIET(stress_ref(i, 512) == (x ^ (uint32_t)f));
+	}
+	CHECK(quiet_fails == 0);
+
+	struct gpu_run r;
+	gpu_run_init(&r);
+	CHECK(r.rounds == -1 && r.software == -1);
+	CHECK(gpu_line("renderer AMD Radeon RX 6700 XT (radeonsi, navi22, LLVM 15.0.7, DRM 3.59)\n", &r));
+	CHECK(!strcmp(r.renderer, "AMD Radeon RX 6700 XT (radeonsi, navi22, LLVM 15.0.7, DRM 3.59)"));
+	CHECK(gpu_line("software 0", &r) && r.software == 0);
+	CHECK(gpu_line("stress rounds=4096 errors=3 secs=300\n", &r));
+	CHECK(r.rounds == 4096 && r.stress_errors == 3 && r.secs == 300);
+	CHECK(gpu_line("vram mib=11264 errors=0\n", &r) && r.vram_mib == 11264 && r.vram_errors == 0);
+	CHECK(gpu_line("fail no graphics driver for this device\n", &r) && !strcmp(r.fail, "no graphics driver for this device"));
+	CHECK(!gpu_line("progress 12", &r) && !gpu_line("", &r));
+	gpu_run_init(&r);
+	CHECK(gpu_line("stress rounds=7", &r) && r.rounds == 7 && r.stress_errors == -1);
+
+	char why[384];
+	struct gpu_heat h = {61000, 79000, 84000, 0, 1650, 231000000};
+	CHECK(gpu_heat_verdict(&h, why, sizeof why) == V_PASS && strstr(why, "18 C above edge"));
+	h.junction = 104000; /* 43 C over edge */
+	CHECK(gpu_heat_verdict(&h, why, sizeof why) == V_FAIL && strstr(why, "paste"));
+	h.junction = 79000, h.mem = 102000;
+	CHECK(gpu_heat_verdict(&h, why, sizeof why) == V_FAIL && strstr(why, "pads"));
+	h.mem = 84000, h.fan_rpm = 0, h.edge = 82000, h.junction = 95000;
+	CHECK(gpu_heat_verdict(&h, why, sizeof why) == V_FAIL && strstr(why, "fan"));
+	h.fan_rpm = 2000, h.limit = 110000;
+	CHECK(gpu_heat_verdict(&h, why, sizeof why) == V_FAIL && strstr(why, "throttled"));
+	struct gpu_heat cold = {NO_TEMP, NO_TEMP, NO_TEMP, 0, -1, -1};
+	CHECK(gpu_heat_verdict(&cold, why, sizeof why) == V_ABSENT);
+	struct gpu_heat nv = {70000, NO_TEMP, NO_TEMP, 0, -1, -1}; /* nouveau: one sensor, no fan */
+	CHECK(gpu_heat_verdict(&nv, why, sizeof why) == V_PASS);
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +592,10 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_sensors();
+	test_burn_verdicts();
+	test_raptor();
+	test_gpu();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

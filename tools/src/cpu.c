@@ -212,7 +212,7 @@ static int cpuid_collect(struct cpuid_leaf *l, int max)
 	return n;
 }
 
-static void cpu_get(struct cpu_info *ci)
+void cpu_get(struct cpu_info *ci)
 {
 	struct cpuid_leaf l[32];
 	cpu_decode(l, cpuid_collect(l, 32), ci);
@@ -252,7 +252,7 @@ static int is_cpu_hwmon(const char *name)
 }
 
 /* Highest CPU temperature in milli-degC, or -1000000 if no sensor. */
-static long long cpu_temp(long long *crit)
+long long cpu_temp(long long *crit)
 {
 	long long best = -1000000, c = 0;
 	char path[300], name[64];
@@ -279,7 +279,7 @@ static long long cpu_temp(long long *crit)
 	return best;
 }
 
-static long long sum_cpus(const char *leaf)
+long long sum_cpus(const char *leaf)
 {
 	long long sum = -1;
 	char path[200];
@@ -342,42 +342,87 @@ static void *worker(void *arg)
 	return NULL;
 }
 
-void cpu_stress(FILE *o, int secs)
+/* Start one checking worker per CPU this process may run on. */
+int load_start(struct load *l)
 {
 	struct cpu_info ci;
 	cpu_set_t set;
 	cpu_get(&ci);
-	int sse2 = ci.f1d >> 26 & 1, avx = avx_usable(&ci), n = 0, started = 0;
+	int sse2 = ci.f1d >> 26 & 1, avx = avx_usable(&ci);
 	if (sched_getaffinity(0, sizeof set, &set))
 		CPU_ZERO(&set);
 	int total = CPU_COUNT(&set) ? CPU_COUNT(&set) : 1;
-	struct worker *w = calloc(total, sizeof *w);
-	if (!w) {
-		verdict(o, V_INCONCLUSIVE, "CPU stress", "out of memory");
-		return;
-	}
-	long long crit, t0 = cpu_temp(&crit), tmax = t0;
-	long long thr0 = sum_cpus("thermal_throttle/core_throttle_count");
-	long long fmin = 0, fmax = 0;
-	int mce0 = mce_count();
-
+	memset(l, 0, sizeof *l);
+	l->sse2 = sse2;
+	l->avx = avx;
+	if (!(l->w = calloc(total, sizeof *l->w)))
+		return 0;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_attr_setstacksize(&attr, 1 << 20); /* three 32 KiB matrices on the stack */
 	stress_run = 1;
-	for (int c = 0; c < CPU_SETSIZE && n < total; c++) {
+	for (int c = 0; c < CPU_SETSIZE && l->n < total; c++) {
 		if (CPU_COUNT(&set) && !CPU_ISSET(c, &set))
 			continue;
-		w[n].cpu = c;
-		w[n].sse2 = sse2;
-		w[n].avx = avx;
-		if (!pthread_create(&w[n].t, &attr, worker, &w[n]))
-			started++;
+		struct worker *w = &l->w[l->n++];
+		w->cpu = c;
+		w->sse2 = sse2;
+		w->avx = avx;
+		if (!pthread_create(&w->t, &attr, worker, w))
+			l->started++;
 		else
-			w[n].cpu = -1;
-		n++;
+			w->cpu = -1;
 	}
 	pthread_attr_destroy(&attr);
+	return l->started;
+}
+
+/* Stop the workers, print every CPU that got wrong results, return their total.
+ * *worst is the CPU with the most wrong results (-1 if none), *ncpus how many had any. */
+unsigned long load_stop(struct load *l, FILE *o, unsigned long *iters, int *worst, int *ncpus)
+{
+	unsigned long bad = 0, most = 0;
+	stress_run = 0;
+	*iters = 0;
+	*worst = -1;
+	*ncpus = 0;
+	for (int i = 0; i < l->n; i++) {
+		struct worker *w = &l->w[i];
+		if (w->cpu < 0)
+			continue;
+		pthread_join(w->t, NULL);
+		*iters += w->iters;
+		unsigned long b = w->bad_sieve + w->bad_fpu + w->bad_sse2 + w->bad_avx;
+		if (b) {
+			fprintf(o, "  cpu%d: %lu wrong results (sieve %lu, x87/fpu %lu, sse2 %lu, avx %lu) in %lu rounds\n",
+				w->cpu, b, w->bad_sieve, w->bad_fpu, w->bad_sse2, w->bad_avx, w->iters);
+			++*ncpus;
+		}
+		if (b > most) {
+			most = b;
+			*worst = w->cpu;
+		}
+		bad += b;
+	}
+	free(l->w);
+	l->w = NULL;
+	return bad;
+}
+
+void cpu_stress(FILE *o, int secs)
+{
+	struct load l;
+	int worst, ncpus;
+	long long crit, t0 = cpu_temp(&crit), tmax = t0;
+	long long thr0 = sum_cpus("thermal_throttle/core_throttle_count");
+	long long fmin = 0, fmax = 0;
+	int mce0 = mce_count();
+	int started = load_start(&l);
+	if (!started) {
+		free(l.w);
+		verdict(o, V_INCONCLUSIVE, "CPU stress", "could not start the test threads");
+		return;
+	}
 
 	for (int s = 0; s < secs && !g_stop; s++) {
 		sleep(1);
@@ -394,24 +439,11 @@ void cpu_stress(FILE *o, int secs)
 			fprintf(stderr, "  %lld MHz", f / 1000);
 		fprintf(stderr, "   ");
 	}
-	stress_run = 0;
-	unsigned long iters = 0, bad = 0;
-	for (int i = 0; i < n; i++) {
-		if (w[i].cpu < 0)
-			continue;
-		pthread_join(w[i].t, NULL);
-		iters += w[i].iters;
-		unsigned long b = w[i].bad_sieve + w[i].bad_fpu + w[i].bad_sse2 + w[i].bad_avx;
-		if (b)
-			fprintf(o, "  cpu%d: %lu wrong results (sieve %lu, x87/fpu %lu, sse2 %lu, avx %lu) in %lu rounds\n",
-				w[i].cpu, b, w[i].bad_sieve, w[i].bad_fpu, w[i].bad_sse2, w[i].bad_avx, w[i].iters);
-		bad += b;
-	}
+	unsigned long iters, bad = load_stop(&l, o, &iters, &worst, &ncpus);
 	fprintf(stderr, "\n");
-	free(w);
 
 	fprintf(o, "CPU stress: %d threads, %d s, paths: integer, fpu%s%s\n",
-		started, secs, sse2 ? ", sse2" : "", avx ? ", avx" : "");
+		started, secs, l.sse2 ? ", sse2" : "", l.avx ? ", avx" : "");
 	if (fmax)
 		fprintf(o, "  clock under load: %lld-%lld MHz\n", fmin / 1000, fmax / 1000);
 	if (bad)

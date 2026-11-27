@@ -44,3 +44,7 @@ mdir -b -i "$fat" ::
 ls -l "$shot"
 grep -q 'bedrock: report partition .* mounted' "$log" # wipe's boot-stick refusal depends on this mount
 grep -q 'bedrock --report: exit 0' "$log"
+# No usable GPU in QEMU: the GPU stress must end without a FAIL, and on the 64-bit
+# system the software renderer must have run the GPU test program itself.
+grep -qE '(INCONCLUSIVE|NOT PRESENT) +GPU' "$log"
+case "$*" in *qemu-system-x86_64*) grep -q 'software renderer llvmpipe' "$log" ;; esac

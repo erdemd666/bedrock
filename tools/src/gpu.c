@@ -64,7 +64,7 @@ static int by_str(const void *a, const void *b)
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
-static void pcie_link(FILE *o, const char *addr)
+void pcie_link(FILE *o, const char *addr)
 {
 	char p[PATH_MAX + 32], real[PATH_MAX], cs[32] = "", ms[32] = "", ps[32] = "", test[64];
 	snprintf(p, sizeof p, "/sys/bus/pci/devices/%s/current_link_width", addr);

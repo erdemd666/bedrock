@@ -67,7 +67,7 @@ void report_run(FILE *o, const char *title)
 	strftime(ts, sizeof ts, "%Y-%m-%d %H:%M UTC", gmtime(&t));
 	uname(&u);
 	fprintf(o, "%s\n%s, %s, kernel %s %s\n"
-		   "Quick checks: 10 s CPU stress, up to 64 MiB RAM, 256-block sampled surface scan.\n\n",
+		   "Quick checks: 10 s CPU and GPU stress, up to 64 MiB RAM, 256-block sampled surface scan.\n\n",
 		HEADER, title, ts, u.release, u.machine);
 	cpu_show(o);
 	board_show(o);
@@ -77,6 +77,7 @@ void report_run(FILE *o, const char *title)
 	for (int i = 0; i < n; i++)
 		disk_scan(o, &d[i], 1);
 	cpu_stress(o, 10);
+	gpu_stress(o, 10);
 	mem_test(o, 64 << 20);
 	fprintf(o, "\nSummary: %d pass, %d fail, %d inconclusive, %d not present\n",
 		g_count[V_PASS], g_count[V_FAIL], g_count[V_INCONCLUSIVE], g_count[V_ABSENT]);

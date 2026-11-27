@@ -61,7 +61,49 @@ double work_matrix_avx(void);
 #define SIEVE_PRIMES 78498 /* primes below 1,000,000 */
 #define MATRIX_SUM 595.0 /* see work_matrix(); checked by the host tests */
 void cpu_show(FILE *o);
+void cpu_get(struct cpu_info *ci);
+long long cpu_temp(long long *crit);
+long long sum_cpus(const char *leaf);
+struct worker;
+struct load { struct worker *w; int n, started, sse2, avx; };
+int load_start(struct load *l);
+unsigned long load_stop(struct load *l, FILE *o, unsigned long *iters, int *worst, int *ncpus);
 void cpu_stress(FILE *o, int secs);
+
+/* cpuage.c: burn-in with sensor monitoring, and the pure logic behind its verdicts */
+#define HWMON_T 8
+struct hwmon {
+	char name[32];
+	int ntemp;
+	char label[HWMON_T][16];
+	long long temp[HWMON_T]; /* milli-degC */
+	long long tcrit[HWMON_T]; /* each sensor's tempN_crit, 0 = none */
+	long long crit;          /* lowest tempN_crit, milli-degC; 0 = none */
+	long long power_uw, fan_rpm, freq_hz; /* -1 = not reported */
+};
+int hwmon_read(const char *dir, struct hwmon *h);
+long long hwmon_temp(const struct hwmon *h, const char *label); /* NULL label: highest */
+long long rapl_energy(const char *zone, long long *range);
+double rapl_watts(long long e0, long long e1, long long range, double secs);
+int kmsg_kind(const char *msg); /* 0 other, 1 hardware error, 2 thermal throttle */
+int cpuinfo_mhz(const char *text, long long *khz, int max);
+int raptor_check(unsigned family, unsigned model, const char *brand);
+#define RAPTOR_FIXED_UCODE 0x12b
+#define NO_TEMP (-1000000LL)
+struct burn {
+	int secs;
+	long long t0, tmax, crit; /* milli-degC; NO_TEMP = no sensor, crit 0 = unknown */
+	int t_crit_s;             /* seconds until crit was first reached, -1 never */
+	double rise_first_min, slope_end; /* degC per minute */
+	long long throttle;       /* new throttle events, -1 = no counter */
+	double watts;             /* average package power, < 0 unknown */
+	double clock_ratio;       /* average clock / rated base clock, 0 unknown */
+};
+enum verdict burn_thermal(const struct burn *b, char *why, size_t n);
+enum verdict burn_heatup(const struct burn *b, char *why, size_t n);
+enum verdict burn_clock(const struct burn *b, char *why, size_t n);
+int core_outlier(const long long *khz, const long long *group, int n, double *ratio);
+void cpu_burnin(FILE *o, int secs);
 
 /* mem.c */
 unsigned long mem_patterns(volatile unsigned long *p, size_t n, FILE *o);
@@ -127,7 +169,26 @@ void board_show(FILE *o);
 /* gpu.c */
 int pciids_lookup(FILE *f, unsigned ven, unsigned dev, char *vname, size_t vn, char *dname, size_t dn);
 void gpu_show(FILE *o);
+void pcie_link(FILE *o, const char *addr);
 void gpu_display_test(void);
+
+/* gpustress.c: drives bedrock-gpu (x86_64 image) and watches the card's sensors */
+struct gpu_run {
+	char renderer[128];
+	int software;           /* -1 not reported */
+	long long rounds, stress_errors, secs, vram_mib, vram_errors; /* -1 not reported */
+	char fail[128];
+};
+void gpu_run_init(struct gpu_run *r);
+int gpu_line(const char *line, struct gpu_run *r);
+struct gpu_heat {
+	long long edge, junction, mem; /* max milli-degC seen; NO_TEMP none */
+	long long limit;    /* the limit a sensor reached (milli-degC), 0 = none reached */
+	long long fan_rpm;  /* fan speed when the card was hottest; -1 none */
+	long long power_uw; /* max; -1 none */
+};
+enum verdict gpu_heat_verdict(const struct gpu_heat *h, char *why, size_t n);
+void gpu_stress(FILE *o, int secs);
 
 /* wipe.c */
 int dev_on_disk(const char *dev, const char *disk);

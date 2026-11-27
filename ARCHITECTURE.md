@@ -15,8 +15,8 @@ motherboard. built by erdem6.com
 
 ## Non-goals (v1)
 
-- A GPU stress test. It needs vendor drivers and Mesa (hundreds of MB).
-  v1 identifies the GPU and tests the display path; stress is a later question.
+- A GPU stress test on the 32-bit system. The 64-bit system carries graphics
+  drivers (loaded only when the GPU test runs), Mesa and GPU firmware for it.
 - Networking, a desktop, a package manager.
 - Windows tools. Everything runs from the USB stick.
 
@@ -85,6 +85,8 @@ a pure parser that the host test suite feeds with captured fixtures.
 | `disk.c` | `/sys/block`, `SG_IO`, NVMe admin ioctl | Identify (model, serial, firmware, capacity). Read-only surface scan with `O_DIRECT`: latency histogram (<5, <20, <50, <150, <500, >500 ms, error) — the classic way to spot a dying drive before SMART does. |
 | `smart.c` | ATA SMART READ DATA / NVMe SMART log | Own parser for the attributes that predict failure: reallocated, pending, uncorrectable sectors, CRC errors, power-on hours, NVMe percentage used / media errors. Health verdict with the reason shown. |
 | `board.c` | `/sys/firmware/dmi/tables` (SMBIOS), hwmon, RTC | Board vendor/model, BIOS version and date, every DIMM slot (size, type, speed, part number), voltages and fans, CMOS battery sanity (RTC year/time drift). |
+| `cpuage.c` | hwmon, cpufreq, RAPL, throttle counters, `/dev/kmsg`, microcode | Burn-in of 2, 10 or 30 minutes on every core with the checked workloads, sampling clocks, temperature, package power and throttling. Separate verdicts for wrong results, worn cooling (throttling, still heating at the end), clocks held below base without heat, one lagging core, machine-check reports, and Intel 13th/14th Gen microcode older than 0x12B. |
+| `gpustress.c` | PCI, DRM render nodes, card hwmon | Loads the card's driver, runs `bedrock-gpu` (tools/gpu: headless OpenGL ES 3.1 compute on GBM, results checked against a CPU reference, video memory written and read back with three patterns) and watches edge/hot-spot/memory temperatures, power and fan. The software renderer never counts as a GPU test. |
 | `gpu.c` | PCI config space, DRM/fbdev | Vendor/device from `pci.ids`, VRAM BAR size, PCIe link width/speed vs maximum. Full-screen display test: solid colours for dead pixels, gradients for banding. |
 | `wipe.c` | block device | Zero pass, random pass, ATA Secure Erase, NVMe Format/Sanitize. Refuses the boot stick. Requires typing the disk serial. Verifies by reading back a sample. |
 | `report.c` | results of the above | Writes `bedrock-<board>-<date>.txt` to the stick's FAT partition so the result leaves with the user. |

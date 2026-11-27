@@ -1,6 +1,8 @@
 # bedrock tools
 
 The userland of Bedrock: one static binary, `bedrock`, with a text menu and every test.
+`gpu/bedrock-gpu.c` is the one exception: a small dynamic program (EGL, GBM, OpenGL ES
+3.1) for the GPU test, built by its own package for the 64-bit system only.
 See `../ARCHITECTURE.md` for what each module does.
 
 ## Build
