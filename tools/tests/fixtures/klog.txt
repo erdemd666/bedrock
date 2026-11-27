@@ -1,0 +1,44 @@
+<6>[    0.000000] Linux version 6.12.117-bedrock
+<4>[    0.012345] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PC00.LPCB.H_EC.ECAV], AE_NOT_FOUND (20240827/psargs-332)
+<3>[    0.012400] ACPI Error: Aborting method \_SB.PC00.LPCB.H_EC._STA due to previous error (AE_NOT_FOUND) (20240827/psparse-529)
+<4>[    0.020000] [Firmware Bug]: TSC ADJUST: CPU0: -1234 force to 0
+<6>[    0.150000] mce: CPU0: Thermal monitoring enabled (TM1)
+<6>[    0.151000] MCE: In-kernel MCE decoding enabled.
+<0>[    0.300000] mce: [Hardware Error]: CPU 2: Machine Check: 0 Bank 7: cc00008000010090
+<0>[    0.300001] mce: [Hardware Error]: TSC 0 ADDR 1f2e3d4c0 MISC 140444400040c086
+<0>[    0.300002] mce: [Hardware Error]: PROCESSOR 0:306f2 TIME 1700000000 SOCKET 0 APIC 4 microcode 49
+<0>[    0.300100] mce: [Hardware Error]: CPU 0: Machine Check: 0 Bank 0: b200000000000005
+<0>[    0.300101] mce: [Hardware Error]: TSC 0
+<0>[    0.300102] mce: [Hardware Error]: PROCESSOR 0:306f2 TIME 1700000000 SOCKET 0 APIC 0 microcode 49
+<6>[    0.400000] pcieport 0000:00:1c.0: AER: enabled with IRQ 122
+<3>[    1.234000] pcieport 0000:00:1c.5: AER: Correctable error message received from 0000:03:00.0
+<3>[    1.234001] nvme 0000:03:00.0: AER: PCIe Bus Error: severity=Correctable, type=Physical Layer, (Receiver ID)
+<3>[    1.234002] nvme 0000:03:00.0: AER:   device [144d:a808] error status/mask=00000001/0000e000
+<3>[    1.234003] nvme 0000:03:00.0: AER:    [ 0] RxErr                  (First)
+<3>[    1.300001] nvme 0000:03:00.0: AER: PCIe Bus Error: severity=Correctable, type=Physical Layer, (Receiver ID)
+<3>[    2.000000] pcieport 0000:00:01.0: AER: PCIe Bus Error: severity=Uncorrectable (Fatal), type=Transaction Layer, (Requester ID)
+<6>[    2.100000] ata1: SATA link up 6.0 Gbps (SStatus 133 SControl 300)
+<6>[    2.100100] ata2: SATA link down (SStatus 0 SControl 300)
+<3>[    3.000000] ata1.00: exception Emask 0x10 SAct 0x10000 SErr 0x400100 action 0x6 frozen
+<3>[    3.000001] ata1: SError: { UnrecovData Handshk }
+<3>[    3.000002] ata1.00: failed command: WRITE FPDMA QUEUED
+<3>[    3.000003] ata1.00: cmd 61/08:80:00:00:00/00:00:00:00:00/40 tag 16 ncq dma 4096 out
+<3>[    3.000004] ata1.00: status: { DRDY }
+<4>[    3.100000] ata1: limiting SATA link speed to 3.0 Gbps
+<3>[    3.200000] ata3.00: error: { UNC }
+<3>[    3.200001] ata4.00: error: { ICRC ABRT }
+<4>[    4.000000] nvme nvme0: I/O tag 12 (100c) opcode 0x2 (Read) QID 3 timeout, aborting req_op:READ(0) size:4096
+<4>[    4.500000] nvme nvme1: controller is down; will reset: CSTS=0xffffffff, PCI_STATUS=0xffff
+<3>[    5.000000] usb 1-4: device descriptor read/64, error -71
+<3>[    5.100000] usb 1-4: device descriptor read/64, error -71
+<6>[    5.200000] usb 1-5: new high-speed USB device number 3 using xhci_hcd
+<3>[    5.300000] usb usb2-port3: over-current condition
+<4>[    6.000000] CPU3: Core temperature is above threshold, cpu clock is throttled (total events = 1)
+<6>[    6.100000] EDAC MC: Ver: 3.0.0
+<4>[    7.000000] EDAC MC0: 2 CE memory read error on CPU_SrcID#0_Ha#0_Chan#1_DIMM#0 (channel:1 slot:0 page:0x12345 offset:0x0 grain:32 syndrome:0x0 - area:DRAM err_code:0001:0091 socket:0 ha:0 channel_mask:2 rank:1)
+<0>[    8.000000] [Hardware Error]: Corrected error, no action required.
+<0>[    8.000001] [Hardware Error]: CPU:0 (17:71:0) MC27_STATUS[-|CE|MiscV|-|-|-|SyndV|-|-|-]: 0x982000000002080b
+<0>[    8.000002] [Hardware Error]: IPID: 0x0000009600050f00, Syndrome: 0x000000000a000000
+<0>[    8.000003] [Hardware Error]: Unified Memory Controller Ext. Error Code: 0
+<6>[    9.000000] mce: [Hardware Error]: Machine check events logged
+<4>[    9.100000] ACPI Warning: SystemIO range 0x0000000000000295-0x0000000000000296 conflicts with OpRegion 0x0000000000000290-0x0000000000000299 (\_GPE.HWM) (20240827/utaddress-204)

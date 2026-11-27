@@ -115,6 +115,7 @@ static void do_sysinfo(void) { run_paged(sysinfo); }
 static void do_disks(void) { run_paged(disk_show); }
 static void do_stress(void) { run_paged(stress); }
 static void do_memtest(void) { run_paged(memtest); }
+static void do_diag(void) { run_paged(board_diag); }
 
 /* The main menu. Each feature adds one line here; keys are shown in this order. */
 static const struct item {
@@ -130,6 +131,7 @@ static const struct item {
 	{'6', "Display test (colours and gradients)", display},
 	{'7', "Save a report to the USB stick", save_report},
 	{'8', "Wipe a disk (destroys data)", wipe},
+	{'b', "Motherboard diagnosis: find the faulty part", do_diag},
 };
 
 int main(int argc, char **argv)

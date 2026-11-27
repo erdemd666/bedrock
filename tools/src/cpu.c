@@ -252,7 +252,7 @@ static int is_cpu_hwmon(const char *name)
 }
 
 /* Highest CPU temperature in milli-degC, or -1000000 if no sensor. */
-static long long cpu_temp(long long *crit)
+long long cpu_temp(long long *crit)
 {
 	long long best = -1000000, c = 0;
 	char path[300], name[64];

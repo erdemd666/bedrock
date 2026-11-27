@@ -429,6 +429,185 @@ static void test_record(void)
 	record_reset();
 }
 
+static const struct finding *find(const struct finding *f, int n, const char *cause)
+{
+	for (int i = 0; i < n; i++)
+		if (strstr(f[i].cause, cause))
+			return &f[i];
+	return NULL;
+}
+
+static void test_klog(void)
+{
+	static struct finding f[FINDINGS_MAX];
+	size_t len;
+	char *log = (char *)load("klog.txt", &len);
+	log[len] = 0;
+	int n = klog_scan(log, f, 0);
+	const struct finding *x;
+	x = find(f, n, "memory controller (bank 7)");
+	CHECK(x && x->part == PART_MEM && x->sev == SEV_MED && !strncmp(x->cause, "corrected", 9));
+	x = find(f, n, "internal parity check (bank 0)");
+	CHECK(x && x->part == PART_CPU && x->sev == SEV_HIGH && !strncmp(x->cause, "fatal", 5));
+	x = find(f, n, "(bank 27)"); /* bus-error code, but the IPID says UMC */
+	CHECK(x && x->part == PART_MEM && strstr(x->cause, "memory controller"));
+	x = find(f, n, "corrected PCIe errors at 0000:03:00.0");
+	CHECK(x && x->part == PART_PCIE && x->sev == SEV_LOW && x->count == 2);
+	x = find(f, n, "fatal PCIe errors at 0000:00:01.0");
+	CHECK(x && x->sev == SEV_HIGH);
+	x = find(f, n, "SATA link saw signal errors");
+	CHECK(x && x->part == PART_SATA && x->count == 1);
+	CHECK((x = find(f, n, "SATA commands failed")) && x->sev == SEV_MED);
+	CHECK(find(f, n, "slowed down after errors") != NULL);
+	CHECK((x = find(f, n, "checksum")) && x->part == PART_SATA);
+	CHECK((x = find(f, n, "could not read some sectors")) && x->part == PART_DISK && x->sev == SEV_HIGH);
+	CHECK((x = find(f, n, "NVMe commands timed out")) && x->part == PART_NVME && x->sev == SEV_MED);
+	CHECK((x = find(f, n, "NVMe drive stopped responding")) && x->sev == SEV_HIGH);
+	CHECK((x = find(f, n, "USB device did not answer")) && x->count == 2 && x->sev == SEV_LOW);
+	CHECK((x = find(f, n, "over-current")) && x->part == PART_USB && x->sev == SEV_MED);
+	CHECK((x = find(f, n, "overheated")) && x->part == PART_COOLING);
+	x = find(f, n, "corrected memory errors on CPU_SrcID#0_Ha#0_Chan#1_DIMM#0");
+	CHECK(x && x->part == PART_MEM && x->count == 2 && x->sev == SEV_MED);
+	CHECK((x = find(f, n, "ACPI bugs")) && x->sev == SEV_NOTE && x->count == 2);
+	CHECK((x = find(f, n, "reserves some hardware")) && x->sev == SEV_NOTE);
+	CHECK(find(f, n, "could not describe") == NULL); /* events logged, but decoded above */
+	/* Benign lines must not count: link down, AER enabled, thermal monitoring, EDAC version, new USB device */
+	int real = 0;
+	for (int i = 0; i < n; i++)
+		real += f[i].sev > SEV_NOTE;
+	CHECK(real == 16);
+
+	n = klog_scan("<6>[ 1.0] mce: [Hardware Error]: Machine check events logged\n"
+		      "<6>[ 1.1] ata1: SATA link down (SStatus 0 SControl 300)\n", f, 0);
+	CHECK(n == 1 && f[0].part == PART_CPU && strstr(f[0].cause, "could not describe"));
+	CHECK(klog_scan("", f, 0) == 0);
+}
+
+static void test_mce_decode(void)
+{
+	struct mce_info m;
+	enum part p;
+	mce_decode(0xbe00000000800400ULL, &m); /* Intel internal timer, uncorrected, PCC */
+	CHECK(m.valid && m.uc && m.pcc && m.part == PART_CPU && strstr(m.unit, "timer"));
+	mce_decode(0x9c00000000000813ULL, &m); /* bus error, II = 00: a memory read */
+	CHECK(m.valid && !m.uc && m.part == PART_MEM && !strcmp(m.unit, "memory bus"));
+	mce_decode(0x9000004000011150ULL, &m); /* cache read error, filter bit 12 set */
+	CHECK(m.valid && !m.uc && !strcmp(m.unit, "cache"));
+	mce_decode(0x8800000000000017ULL, &m);
+	CHECK(!strcmp(m.unit, "TLB"));
+	mce_decode(0x880000000000000fULL, &m);
+	CHECK(!strcmp(m.unit, "cache hierarchy"));
+	mce_decode(0x8800000000000e0bULL, &m); /* generic I/O error: bus, not memory */
+	CHECK(m.part == PART_BOARD);
+	mce_decode(0x8800000000000003ULL, &m);
+	CHECK(m.part == PART_BOARD);
+	mce_decode(0x7c0000000000009fULL, &m); /* VAL clear: nothing to report */
+	CHECK(!m.valid);
+	CHECK(smca_unit(0x000000b000000000ULL, &p) && p == PART_CPU);
+	CHECK(!strcmp(smca_unit(0x000700b000000000ULL, &p), "L3 cache") && p == PART_CPU);
+	CHECK(smca_unit(0x0000004600000000ULL, &p) && p == PART_PCIE);
+	CHECK(smca_unit(0x0004b00000000000ULL, &p) == NULL);
+}
+
+static void test_pcie_link(void)
+{
+	char why[160];
+	struct pcie_link l = {.cw = 16, .mw = 16, .pw = 16, .cs = 16, .ms = 16, .ps = 16};
+	CHECK(pcie_link_judge(&l, 1, why, sizeof why) == V_PASS);
+	l.cw = 8; /* x16 card, x16 slot, trained x8: dirty contacts */
+	CHECK(pcie_link_judge(&l, 1, why, sizeof why) == V_FAIL && strstr(why, "x16"));
+	l.pw = 4, l.cw = 4; /* x16 card in an x4-wired slot: normal */
+	CHECK(pcie_link_judge(&l, 1, why, sizeof why) == V_PASS);
+	l.pw = -1, l.cw = 16, l.cs = 2.5; /* GPU idling at Gen1 */
+	CHECK(pcie_link_judge(&l, 1, why, sizeof why) == V_INCONCLUSIVE && strstr(why, "idles"));
+	CHECK(pcie_link_judge(&l, 0, why, sizeof why) == V_INCONCLUSIVE && !strstr(why, "idles"));
+	l.cs = 8, l.ms = 16, l.ps = 8; /* Gen4 card in a Gen3 slot */
+	CHECK(pcie_link_judge(&l, 0, why, sizeof why) == V_PASS);
+	l.cw = 0;
+	CHECK(pcie_link_judge(&l, 0, why, sizeof why) == V_INCONCLUSIVE && strstr(why, "down"));
+	CHECK(aer_total("RxErr 2\nBadTLP 0\nTOTAL_ERR_COR 5\n") == 5);
+	CHECK(aer_total("TOTAL_ERR_FATAL 0\n") == 0 && aer_total("") == -1 && aer_total(NULL) == -1);
+}
+
+static void test_sata(void)
+{
+	char why[160];
+	CHECK(sata_gbps10("6.0 Gbps") == 60 && sata_gbps10("1.5 Gbps") == 15 && sata_gbps10("<unknown>") == 0);
+	CHECK(sata_judge(60, 60, 60, 60, 0, why, sizeof why) == V_PASS);
+	CHECK(sata_judge(60, 60, 30, 30, 0, why, sizeof why) == V_PASS); /* SATA II drive */
+	CHECK(sata_judge(30, 30, 30, 60, 0, why, sizeof why) == V_PASS); /* SATA II port */
+	CHECK(sata_judge(60, 30, 30, 60, 0, why, sizeof why) == V_FAIL && strstr(why, "after errors"));
+	CHECK(sata_judge(60, 60, 15, 60, 0, why, sizeof why) == V_INCONCLUSIVE);
+	CHECK(sata_judge(60, 60, 60, 0, 3, why, sizeof why) == V_INCONCLUSIVE && strstr(why, "3 recent errors"));
+	CHECK(sata_judge(0, 0, 0, 60, 0, why, sizeof why) == V_ABSENT);
+	CHECK(sata_judge(0, 0, 15, 0, 0, why, sizeof why) == V_PASS); /* nothing known to compare */
+}
+
+static void test_rails(void)
+{
+	char why[160];
+	CHECK(rail_of("nct6798", 3, "") == R_3V3 && rail_of("nct6798", 7, "") == R_3VSB && rail_of("nct6798", 8, "") == R_VBAT);
+	CHECK(rail_of("nct6798", 0, "") == -1 && rail_of("nct6798", 1, "") == -1); /* board dividers unknown */
+	CHECK(rail_of("nct6106", 8, "") == -1 && rail_of("w83627uhg", 8, "") == -1);
+	CHECK(rail_of("w83627ehf", 8, "") == R_VBAT && rail_of("f71882fg", 8, "") == -1);
+	CHECK(rail_of("it8728", 8, "Vbat") == R_VBAT && rail_of("it87", 7, "3VSB") == R_3VSB);
+	CHECK(rail_of("it87", 3, "+5V") == -1 && rail_of("it87", 7, "5VSB") == -1 && rail_of("it87", 2, "") == -1);
+	CHECK(rail_of("asus_wmi_sensors", 0, "+12V Voltage") == R_12V && rail_of("asus_wmi_sensors", 0, "+5V Voltage") == R_5V);
+	CHECK(rail_of("asus_wmi_sensors", 0, "3VSB Voltage") == R_3VSB && rail_of("asus_wmi_sensors", 0, "VBAT Voltage") == R_VBAT);
+	CHECK(rail_of("asus_wmi_sensors", 0, "SB 1.05V Voltage") == -1 && rail_of("asus_wmi_sensors", 0, "CPU Core Voltage") == -1);
+	CHECK(rail_of("atk0110", 0, "+3.3 Voltage") == R_3V3 && rail_of("atk0110", 0, "+5 Voltage") == R_5V);
+	CHECK(rail_of("atk0110", 0, "Vcore Voltage") == -1 && rail_of("coretemp", 3, "") == -1);
+	CHECK(rail_judge(R_12V, 12.1, why, sizeof why) == V_PASS);
+	CHECK(rail_judge(R_12V, 10.7, why, sizeof why) == V_FAIL && strstr(why, "10.70"));
+	CHECK(rail_judge(R_5V, 5.6, why, sizeof why) == V_FAIL);
+	CHECK(rail_judge(R_3V3, 3.0, why, sizeof why) == V_PASS);
+	CHECK(rail_judge(R_VBAT, 3.3, why, sizeof why) == V_PASS && rail_judge(R_VBAT, 3.9, why, sizeof why) == V_PASS);
+	CHECK(rail_judge(R_VBAT, 2.7, why, sizeof why) == V_FAIL && strstr(why, "battery"));
+	CHECK(rail_judge(R_12V, 0.0, why, sizeof why) == V_INCONCLUSIVE);
+}
+
+static void dimm(struct smbios *s, const char *loc, unsigned mb, unsigned speed, const char *part)
+{
+	struct dimm *d = &s->dimm[s->nslots++];
+	snprintf(d->loc, sizeof d->loc, "%s", loc);
+	snprintf(d->part, sizeof d->part, "%s", part);
+	d->mb = mb, d->speed = speed;
+}
+
+static void test_mem_judge(void)
+{
+	static struct smbios s;
+	char why[200];
+	int notes;
+	memset(&s, 0, sizeof s);
+	dimm(&s, "ChannelA-DIMM0", 8192, 3200, "X1");
+	dimm(&s, "ChannelA-DIMM1", 0, 0, "");
+	dimm(&s, "ChannelB-DIMM0", 8192, 3200, "X1");
+	dimm(&s, "ChannelB-DIMM1", 0, 0, "");
+	CHECK(mem_judge(&s, 16000, 64, &notes, why, sizeof why) == V_PASS && !notes);
+	CHECK(mem_judge(&s, 15000, 64, &notes, why, sizeof why) == V_PASS); /* 1 GB shared with the GPU */
+	CHECK(mem_judge(&s, 7900, 64, &notes, why, sizeof why) == V_FAIL && strstr(why, "missing"));
+	CHECK(mem_judge(&s, 2500, 32, &notes, why, sizeof why) == V_INCONCLUSIVE); /* 32-bit build: cannot see it all */
+	CHECK(mem_judge(&s, 1000, 32, &notes, why, sizeof why) == V_INCONCLUSIVE);
+	s.dimm[2].mb = 0, s.dimm[1].mb = 4096, s.dimm[1].speed = 2666; /* both on channel A, different modules */
+	CHECK(mem_judge(&s, 12200, 64, &notes, why, sizeof why) == V_PASS && notes == (MEM_MIXED | MEM_ONE_CHANNEL));
+	s.dimm[1].mb = DIMM_UNKNOWN;
+	CHECK(mem_judge(&s, 12200, 64, &notes, why, sizeof why) == V_INCONCLUSIVE);
+
+	memset(&s, 0, sizeof s); /* Pentium III board: three 128 MB modules, no channel names */
+	dimm(&s, "DIMM 0", 128, 133, "");
+	dimm(&s, "DIMM 1", 128, 133, "");
+	dimm(&s, "DIMM 2", 128, 133, "");
+	CHECK(mem_judge(&s, 383, 32, &notes, why, sizeof why) == V_PASS && !notes);
+	CHECK(mem_judge(&s, 255, 32, &notes, why, sizeof why) == V_FAIL);
+	memset(&s, 0, sizeof s);
+	dimm(&s, "DIMM_A1", 4096, 1600, "P");
+	dimm(&s, "DIMM_B1", 0, 0, "");
+	CHECK(mem_judge(&s, 4000, 64, &notes, why, sizeof why) == V_PASS && notes == MEM_ONE_CHANNEL);
+	memset(&s, 0, sizeof s);
+	CHECK(mem_judge(&s, 4000, 64, &notes, why, sizeof why) == V_INCONCLUSIVE);
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +623,12 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_klog();
+	test_mce_decode();
+	test_pcie_link();
+	test_sata();
+	test_rails();
+	test_mem_judge();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

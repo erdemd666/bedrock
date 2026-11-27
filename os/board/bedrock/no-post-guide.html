@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No-POST guide</title>
+<style>
+:root { --ink: #1d1d1b; --soft: #5b5b57; --line: #d9d7d0; --bg: #fdfcf9; --band: #f2f0ea; --accent: #8a4b14; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 Georgia, "Times New Roman", serif; }
+main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 16px 4rem; }
+header p { margin: 0; font: 600 0.8rem/1.4 system-ui, sans-serif; letter-spacing: 0.08em; color: var(--soft); }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0.4rem 0 0.6rem; }
+h2 { font-size: 1.35rem; margin: 2.6rem 0 0.5rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+h3 { font-size: 1.08rem; margin: 1.6rem 0 0.4rem; }
+p, li { max-width: 40rem; }
+ol, ul { padding-left: 1.4rem; }
+li { margin: 0.25rem 0; }
+a { color: var(--accent); }
+nav ol { columns: 2; column-gap: 2rem; font-size: 0.95rem; }
+@media (max-width: 34rem) { nav ol { columns: 1; } }
+.note { background: var(--band); border-left: 3px solid var(--accent); padding: 0.6rem 0.9rem; margin: 1rem 0; }
+.wrap { overflow-x: auto; margin: 0.6rem 0; }
+table { border-collapse: collapse; width: 100%; font: 0.92rem/1.4 system-ui, sans-serif; }
+th, td { text-align: left; vertical-align: top; padding: 0.35rem 0.6rem 0.35rem 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--soft); }
+td:first-child { white-space: nowrap; font-weight: 600; padding-right: 1rem; }
+.src { font: 0.8rem/1.4 system-ui, sans-serif; color: var(--soft); margin: 0.2rem 0 1rem; }
+code { font: 0.92em ui-monospace, Consolas, monospace; }
+@media print {
+	body { background: #fff; font-size: 11pt; }
+	main { max-width: none; padding: 0; }
+	nav, .noprint { display: none; }
+	h2 { break-before: auto; break-after: avoid; }
+	table, .note { break-inside: avoid; }
+	a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p>BEDROCK &middot; built by erdem6.com</p>
+<h1>When a PC does not start</h1>
+<p style="font:inherit;letter-spacing:0;color:inherit">For a machine that powers on but never shows a picture, beeps, or shows a code
+on the board. Work through it from the top: most dead PCs are one loose or failed part, and
+the order below finds it fastest.</p>
+</header>
+
+<nav class="noprint">
+<h3>Contents</h3>
+<ol>
+<li><a href="#first">First checks</a></li>
+<li><a href="#minimum">The minimum-parts test</a></li>
+<li><a href="#leds">Board debug lights</a></li>
+<li><a href="#post">Two-digit POST codes</a></li>
+<li><a href="#beeps">Beep codes by BIOS</a></li>
+<li><a href="#dell">Dell</a></li>
+<li><a href="#hp">HP</a></li>
+<li><a href="#lenovo">Lenovo</a></li>
+<li><a href="#sources">Sources</a></li>
+</ol>
+</nav>
+
+<h2 id="first">1. First checks</h2>
+<ol>
+<li><strong>Safety.</strong> Switch the power supply off at its rear switch and unplug the mains cable
+before you touch anything inside. Hold the power button for five seconds to drain what is left.
+Touch bare metal on the case before handling parts.</li>
+<li><strong>Write down what you see and hear</strong> when you press the power button: fans spin or not,
+lights on the board and their colour, beeps (count them, note long and short), a two-digit display.
+The tables below turn that into a part.</li>
+<li><strong>The monitor.</strong> Is the cable in the graphics card, not the board's own video port
+(a card disables the board port on most desktops)? Is the monitor on the right input? Try another cable.</li>
+<li><strong>Power connectors.</strong> The wide 24-pin plug and the 4- or 8-pin CPU plug near the
+processor must both be in and latched. A missing CPU plug gives fans but nothing else.</li>
+<li><strong>Recent change?</strong> If it stopped after new memory, a new card or a BIOS setting
+(memory overclock such as XMP or EXPO), undo that first.</li>
+</ol>
+<div class="note">New memory or a new CPU can take several minutes on the first start while the
+board trains the memory, with a black screen. Wait five minutes before you call it dead.</div>
+
+<h2 id="minimum">2. The minimum-parts test</h2>
+<p>Strip the machine to the parts it needs to reach the BIOS screen, then add parts back one at a time.
+The part that brings the fault back is the faulty one.</p>
+
+<h3>Step 1: power supply</h3>
+<ul>
+<li>No lights and no fans at all: check the wall socket, the mains cable and the rear switch. Then
+check the front-panel power button wires (labelled PWR_SW on the board): briefly touching the two
+PWR_SW pins with a screwdriver does the same as the button. If that starts it, the case button is faulty.</li>
+<li>Fans spin for a second and stop, or the machine clicks and restarts: often a short. Remove
+everything but the board, CPU, cooler and one memory module, and lift the board out if a
+stray standoff under it may touch the back.</li>
+<li>A multimeter on the 24-pin plug, with the machine on, should read about +12&nbsp;V on yellow wires,
++5&nbsp;V on red, +3.3&nbsp;V on orange, and +5&nbsp;V on purple even when the machine is off but plugged in
+(standby). Readings more than 5% off point to the power supply. The surest test is a known-good
+power supply of the same type.</li>
+</ul>
+
+<h3>Step 2: strip it down</h3>
+<ol>
+<li>Leave connected only: board, CPU with its cooler (fan plugged into CPU_FAN), one memory module,
+power supply (24-pin and CPU plug) and the power button.</li>
+<li>Remove every card, disk, USB device and front-panel USB or audio cable. If the CPU has graphics
+built in, remove the graphics card too and connect the monitor to the board.</li>
+<li>Start it. If you now reach the BIOS screen (or get a "no boot device" message), the board, CPU,
+memory and power supply work: add the other parts back one at a time.</li>
+</ol>
+
+<h3>Step 3: one memory module per slot</h3>
+<ol>
+<li>Use the slot the board manual names for a single module (often the second slot from the CPU,
+labelled A2 or DIMM_A2). Press until both latches click.</li>
+<li>Try each module alone in that slot. A module that fails in every slot is bad.</li>
+<li>Take one good module and try it in every slot. A slot that never works means the slot, the
+board, or the CPU's memory controller; check the CPU socket for bent pins.</li>
+</ol>
+
+<h3>Step 4: clear the BIOS settings (CMOS)</h3>
+<ol>
+<li>With the mains cable unplugged: use the board's CLR_CMOS button or jumper (see the board manual),
+or take out the coin cell (CR2032) for five minutes.</li>
+<li>If the clock resets to an old date every time the mains is unplugged, replace the coin cell.</li>
+</ol>
+
+<h3>Step 5: outside the case</h3>
+<p>Place the board on its cardboard box (never on the anti-static bag, which can conduct) with the
+minimum parts from step 2. If it starts there but not in the case, something in the case is shorting
+it: an extra standoff, a loose screw, or a damaged front-panel cable.</p>
+
+<div class="note">Still dead with a known-good power supply and a known-good memory module, in the
+minimum setup, outside the case: the board or the CPU is faulty. Bent socket pins, a swollen
+capacitor or a burnt smell near the CPU power stage point to the board.</div>
+
+<h2 id="leds">3. Board debug lights</h2>
+<p>Many boards from about 2017 on have four small lights, labelled CPU, DRAM, VGA and BOOT, near
+the memory slots or the 24-pin plug. During a normal start they come on one after another and go out.
+The light that stays on shows where the start stopped.</p>
+<div class="wrap"><table>
+<tr><th>Light on</th><th>Meaning</th><th>Try</th></tr>
+<tr><td>CPU</td><td>No CPU detected, or the CPU failed</td><td>Check the CPU power plug; reseat the CPU; check the socket for bent or dirty pins; try another CPU the board supports</td></tr>
+<tr><td>DRAM</td><td>No memory detected, or memory failed</td><td>Reseat the memory; one module at a time; clean the contacts; use the slots the manual names</td></tr>
+<tr><td>VGA</td><td>No graphics detected, or graphics failed</td><td>Reseat the card and its power plugs; clean its contacts; try another card. With built-in graphics, reseat the CPU</td></tr>
+<tr><td>BOOT</td><td>No boot device, or it failed</td><td>Reseat SATA cables at both ends or the M.2 drive and its screw; try another cable, port or drive</td></tr>
+</table></div>
+<p class="src">Source: ASUS, "ASUS motherboard troubleshooting via Q-LED indicators" (support FAQ 1042678).
+MSI board manuals (for example the MEG X570 ACE user manual, "EZ Debug LED") describe the same four
+lights: each indicates that component "is not detected or fail".</p>
+
+<h2 id="post">4. Two-digit POST codes</h2>
+<p>Boards with a two-digit display (or a POST card in a slot) show where the start is. The code
+it stops on is what counts. These are the codes of AMI Aptio V firmware, which most current desktop
+boards use; board makers can add their own, so check the board manual for any code not listed.</p>
+<div class="wrap"><table>
+<tr><th>Code</th><th>Meaning</th><th>Look at</th></tr>
+<tr><td>10&ndash;2A</td><td>Early CPU and chipset start-up</td><td>CPU, CPU power plug, board</td></tr>
+<tr><td>2B&ndash;2F</td><td>Memory start-up: reading module data, detecting, setting timings</td><td>Memory</td></tr>
+<tr><td>50</td><td>Memory error: invalid type or incompatible speed</td><td>Memory, XMP/EXPO setting</td></tr>
+<tr><td>51</td><td>Memory error: module data (SPD) could not be read</td><td>Memory</td></tr>
+<tr><td>52</td><td>Memory error: invalid size, or modules do not match</td><td>Memory</td></tr>
+<tr><td>53</td><td>No usable memory detected</td><td>Memory, slots, CPU socket</td></tr>
+<tr><td>54</td><td>Unspecified memory error</td><td>Memory</td></tr>
+<tr><td>55</td><td>Memory not installed</td><td>Memory, slots, CPU socket</td></tr>
+<tr><td>56</td><td>Invalid CPU type or speed</td><td>CPU support list, BIOS version</td></tr>
+<tr><td>57</td><td>CPU mismatch</td><td>CPU</td></tr>
+<tr><td>58</td><td>CPU self test failed, or possible cache error</td><td>CPU</td></tr>
+<tr><td>59</td><td>CPU microcode not found or update failed</td><td>BIOS version (update for newer CPUs)</td></tr>
+<tr><td>5A</td><td>Internal CPU error</td><td>CPU</td></tr>
+<tr><td>92&ndash;96</td><td>PCI bus start-up and resources</td><td>Expansion cards (if it stops here)</td></tr>
+<tr><td>99</td><td>Super I/O start-up</td><td>Board</td></tr>
+<tr><td>9A&ndash;9D</td><td>USB start-up</td><td>USB devices, front-panel USB cables</td></tr>
+<tr><td>A0&ndash;A3</td><td>Disk controller (IDE/SATA) start-up</td><td>Disks, SATA cables</td></tr>
+<tr><td>B2</td><td>Legacy option ROMs</td><td>Expansion cards</td></tr>
+<tr><td>D0</td><td>CPU initialization error</td><td>CPU</td></tr>
+<tr><td>D1</td><td>North bridge initialization error</td><td>Board</td></tr>
+<tr><td>D2</td><td>South bridge initialization error</td><td>Board</td></tr>
+<tr><td>D4</td><td>PCI resource allocation error: out of resources</td><td>Expansion cards; remove some</td></tr>
+<tr><td>D5</td><td>No space for legacy option ROM</td><td>Expansion cards; CSM setting</td></tr>
+<tr><td>D6</td><td>No console output devices found</td><td>Graphics card, monitor cable</td></tr>
+<tr><td>D7</td><td>No console input devices found</td><td>Keyboard</td></tr>
+<tr><td>D9, DA</td><td>Boot option failed to load or start</td><td>Boot disk</td></tr>
+<tr><td>DB</td><td>Flash update failed</td><td>BIOS (use the board's BIOS recovery)</td></tr>
+<tr><td>E8&ndash;EB</td><td>Resume from sleep failed</td><td>Not a start fault; power off fully and retry</td></tr>
+<tr><td>F8&ndash;FA</td><td>BIOS recovery failed: image missing or invalid</td><td>BIOS recovery file on the USB stick</td></tr>
+<tr><td>A9, AB</td><td>BIOS setup started, waiting for input</td><td>Normal</td></tr>
+<tr><td>AD</td><td>Ready to boot</td><td>Normal: start-up finished</td></tr>
+</table></div>
+<p class="src">Source: Supermicro, "AMI Aptio V BIOS POST Codes for Supermicro Motherboards User's Guide",
+Revision 1.0b, 6 August 2024, adapted from AMI Aptio 5.x Status Codes Revision 2.04.</p>
+
+<h2 id="beeps">5. Beep codes by BIOS</h2>
+<p>Beeps need a speaker: many cases have none. A small piezo buzzer on the board's SPEAKER pins
+costs little and is worth having. The BIOS maker's name is on the start-up screen and in the board manual.</p>
+
+<h3>AMI Aptio (UEFI, most boards from about 2011 on)</h3>
+<div class="wrap"><table>
+<tr><th>Beeps</th><th>Meaning</th></tr>
+<tr><td>1</td><td>Memory not installed (early in start-up); later in start-up: invalid password</td></tr>
+<tr><td>2</td><td>BIOS recovery started</td></tr>
+<tr><td>4</td><td>BIOS recovery failed</td></tr>
+<tr><td>5</td><td>No console input or output devices found (keyboard, graphics)</td></tr>
+<tr><td>6</td><td>Flash update failed</td></tr>
+<tr><td>8</td><td>Platform PCI resource requirements cannot be met (expansion cards)</td></tr>
+</table></div>
+<p class="src">Source: Supermicro, "AMI Aptio V BIOS POST Codes for Supermicro Motherboards User's Guide",
+Revision 1.0b, 2024: PEI and DXE beep codes. Codes 3, 4 (late) and 7 are for development use.</p>
+
+<h3>AMIBIOS (older AMI BIOS, before UEFI)</h3>
+<div class="wrap"><table>
+<tr><th>Beeps</th><th>Meaning</th><th>Try</th></tr>
+<tr><td>1</td><td>Memory refresh timer error</td><td>Reseat or replace memory</td></tr>
+<tr><td>2</td><td>Parity error</td><td>Reseat or replace memory</td></tr>
+<tr><td>3</td><td>Main memory read/write test error</td><td>Reseat or replace memory</td></tr>
+<tr><td>4</td><td>Motherboard timer not operational</td><td>Board; first remove all cards but graphics</td></tr>
+<tr><td>5</td><td>Processor error</td><td>CPU or board</td></tr>
+<tr><td>6</td><td>Keyboard controller test error</td><td>Board</td></tr>
+<tr><td>7</td><td>General exception error</td><td>CPU or board</td></tr>
+<tr><td>8</td><td>Display memory error</td><td>Reseat or replace the graphics card</td></tr>
+<tr><td>9</td><td>ROM checksum error</td><td>BIOS chip</td></tr>
+<tr><td>10</td><td>CMOS shutdown register read/write error</td><td>Board</td></tr>
+<tr><td>11</td><td>Cache memory bad</td><td>CPU or board</td></tr>
+</table></div>
+<p class="src">Source: American Megatrends, "AMIBIOS8 Check Point and Beep Code List", Version 1.2,
+1 October 2002, section 7. AMI advises: before blaming the board for codes 4&ndash;7 and 9&ndash;11, remove
+every card except graphics; if the beeps stop, add cards back one at a time.</p>
+
+<h3>Award BIOS</h3>
+<div class="wrap"><table>
+<tr><th>Beeps</th><th>Meaning</th></tr>
+<tr><td>1 short</td><td>Started normally</td></tr>
+<tr><td>2 short</td><td>CMOS setting error (clear CMOS, check the coin cell)</td></tr>
+<tr><td>1 long, 1 short</td><td>Memory or board error</td></tr>
+<tr><td>1 long, 2 short</td><td>Monitor or graphics card error</td></tr>
+<tr><td>1 long, 3 short</td><td>Keyboard error</td></tr>
+<tr><td>1 long, 9 short</td><td>BIOS ROM error</td></tr>
+<tr><td>Continuous long</td><td>Memory error</td></tr>
+<tr><td>Continuous short</td><td>Power error</td></tr>
+</table></div>
+<p class="src">Source: GIGABYTE, GA-8I865PEM-775 user manual, "AWARD BIOS Beep Codes".
+Other Award boards may differ; their manual is the reference.</p>
+
+<h3>Phoenix BIOS</h3>
+<p>We could not obtain a Phoenix document to cite, so no generic Phoenix table is given here.
+Phoenix uses groups of beeps such as 1-3-1 (one beep, pause, three, pause, one). Dell's older machines
+use this style: see the older Dell beep table below, and the board or PC maker's manual for others.</p>
+
+<h2 id="dell">6. Dell</h2>
+<p>Dell desktops blink the power light in amber: a number of blinks, a pause, a second number, then a
+longer pause. Count both: 2 blinks, pause, 3 blinks is code 2,3. White light is normal operation.</p>
+
+<h3>OptiPlex 2020 and later</h3>
+<div class="wrap"><table>
+<tr><th>Amber</th><th>Meaning</th></tr>
+<tr><td>1,1</td><td>TPM detection failure</td></tr>
+<tr><td>1,2</td><td>Unrecoverable SPI flash (BIOS chip) failure</td></tr>
+<tr><td>1,6</td><td>Embedded controller error: unplug, hold the power button to drain</td></tr>
+<tr><td>2,1</td><td>CPU failure</td></tr>
+<tr><td>2,2</td><td>Board, power supply or power cabling</td></tr>
+<tr><td>2,3</td><td>No memory detected</td></tr>
+<tr><td>2,4</td><td>Memory failure</td></tr>
+<tr><td>2,5</td><td>Invalid memory installed</td></tr>
+<tr><td>2,6</td><td>Board or chipset error</td></tr>
+<tr><td>3,1</td><td>Clock power or CMOS battery failure: replace the coin cell</td></tr>
+<tr><td>3,2</td><td>Graphics card or chip failure</td></tr>
+<tr><td>3,3</td><td>BIOS recovery image not found</td></tr>
+<tr><td>3,4</td><td>BIOS recovery image found but invalid</td></tr>
+<tr><td>3,5</td><td>Power rail failure (power sequencing)</td></tr>
+<tr><td>3,7</td><td>Management Engine error or timeout</td></tr>
+<tr><td>4,1</td><td>Memory power rail failure</td></tr>
+<tr><td>4,2</td><td>CPU power cable connection: check the plug, run the power supply self-test</td></tr>
+</table></div>
+
+<h3>OptiPlex 2012 to 2020</h3>
+<div class="wrap"><table>
+<tr><th>Amber</th><th>Meaning</th></tr>
+<tr><td>2,1</td><td>Board failure</td></tr>
+<tr><td>2,2</td><td>Board, power supply or cabling</td></tr>
+<tr><td>2,3</td><td>Board, memory or CPU</td></tr>
+<tr><td>2,4</td><td>Coin cell battery</td></tr>
+<tr><td>2,5</td><td>BIOS checksum failure (recovery mode)</td></tr>
+<tr><td>2,6</td><td>CPU</td></tr>
+<tr><td>2,7</td><td>Memory</td></tr>
+<tr><td>3,1</td><td>PCI device or video</td></tr>
+<tr><td>3,2</td><td>Video</td></tr>
+<tr><td>3,3</td><td>No memory detected</td></tr>
+<tr><td>3,4</td><td>Storage</td></tr>
+<tr><td>3,5</td><td>Memory configuration or incompatibility</td></tr>
+<tr><td>3,6</td><td>Board</td></tr>
+<tr><td>3,7</td><td>Possible memory failure</td></tr>
+</table></div>
+<p>Since 2012 Dell machines beep only for a memory failure; any other beep code goes to Dell support.</p>
+
+<h3>Older Dell beep codes (before 2012)</h3>
+<div class="wrap"><table>
+<tr><th>Beeps</th><th>Meaning</th></tr>
+<tr><td>1-1-2</td><td>CPU register failure</td></tr>
+<tr><td>1-1-3</td><td>NVRAM failure</td></tr>
+<tr><td>1-1-4</td><td>BIOS checksum failure</td></tr>
+<tr><td>1-2-1</td><td>Interval timer failure</td></tr>
+<tr><td>1-2-2, 1-2-3</td><td>DMA failure</td></tr>
+<tr><td>1-3-1 to 2-4-4</td><td>Memory not properly identified or usable</td></tr>
+<tr><td>3-1-1 to 3-2-2</td><td>DMA or interrupt controller failure (board)</td></tr>
+<tr><td>3-2-4</td><td>Keyboard controller failure</td></tr>
+<tr><td>3-3-1</td><td>NVRAM power loss (coin cell)</td></tr>
+<tr><td>3-3-2</td><td>NVRAM configuration error</td></tr>
+<tr><td>3-3-4</td><td>Video memory test failure</td></tr>
+<tr><td>3-4-1 to 3-4-3</td><td>Video failure</td></tr>
+<tr><td>4-2-1 to 4-2-4</td><td>Timer, shutdown, gate A20 or protected-mode failure (board)</td></tr>
+<tr><td>4-3-1</td><td>Memory failure above 64 KB</td></tr>
+<tr><td>4-3-3, 4-3-4</td><td>Timer or time-of-day clock failure</td></tr>
+<tr><td>4-4-1</td><td>Serial or parallel port failure</td></tr>
+<tr><td>4-4-2</td><td>Failure to decompress code to shadow memory</td></tr>
+<tr><td>4-4-3</td><td>Maths co-processor failure</td></tr>
+<tr><td>4-4-4</td><td>Cache test failure</td></tr>
+</table></div>
+<p class="src">Source: Dell, "A Reference Guide to the Dell OptiPlex Diagnostic Indicators" (knowledge base
+article 000126021). Precision, Vostro and Inspiron have their own articles (000153002, 000132290,
+000132276); some codes differ by product line and year.</p>
+
+<h2 id="hp">7. HP</h2>
+<p>HP business desktops blink the power light red (long blinks) then white (short blinks), and may beep
+the same pattern. 3 red then 5 white is code 3.5. Beeps stop after five rounds; the blinking continues.</p>
+<div class="wrap"><table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td>2.2</td><td>Main BIOS area corrupted, no recovery image</td></tr>
+<tr><td>2.3</td><td>A key sequence is required (BIOS policy)</td></tr>
+<tr><td>2.4</td><td>Checking or recovering the BIOS boot block</td></tr>
+<tr><td>3.2</td><td>Timed out in memory start-up: memory</td></tr>
+<tr><td>3.3</td><td>Timed out in graphics start-up: graphics</td></tr>
+<tr><td>3.4</td><td>Board power failure</td></tr>
+<tr><td>3.5</td><td>CPU not detected</td></tr>
+<tr><td>3.6</td><td>CPU does not support an enabled feature</td></tr>
+<tr><td>4.2</td><td>CPU over temperature</td></tr>
+<tr><td>4.3</td><td>Ambient over temperature</td></tr>
+<tr><td>4.4</td><td>MXM (graphics module) over temperature</td></tr>
+<tr><td>5.2</td><td>Embedded controller cannot find valid firmware</td></tr>
+<tr><td>5.3, 5.4</td><td>Timed out waiting for the BIOS (board)</td></tr>
+<tr><td>5.5</td><td>Restarted after a possible lock-up</td></tr>
+</table></div>
+<p class="src">Source: HP, "Maintenance and Service Guide, HP EliteDesk 800 G2 TWR Business PC" (2015),
+"Interpreting system validation diagnostic front panel LEDs and audible codes". Not every code exists on
+every model; HP's support article "HP Desktop PCs &ndash; Computer beeps or a light blinks during startup"
+covers consumer models.</p>
+
+<h2 id="lenovo">8. Lenovo</h2>
+<div class="wrap"><table>
+<tr><th>Beeps</th><th>Meaning</th><th>Try</th></tr>
+<tr><td>2 short</td><td>POST error: a code is shown on screen</td><td>Read the code on screen</td></tr>
+<tr><td>3 short, 1 long</td><td>Memory error</td><td>Reseat memory, replace memory, then the board</td></tr>
+<tr><td>4 long</td><td>Not enough resources for expansion cards (codes 8998, 8999)</td><td>Remove expansion cards</td></tr>
+<tr><td>2 long, 3 short</td><td>Graphics card error</td><td>Reseat the card, replace it, then the board</td></tr>
+</table></div>
+<p class="src">Source: Lenovo, "Hardware Maintenance Manual, ThinkCentre M90a Pro Gen6", First Edition,
+March 2025, "Beep symptoms". Older ThinkCentre models can differ; ThinkPad laptops use Lenovo SmartBeep
+(a phone app decodes the beeps).</p>
+
+<h2 id="sources">Sources</h2>
+<ul class="src" style="font-size:0.85rem">
+<li>American Megatrends, AMIBIOS8 Check Point and Beep Code List, v1.2, 2002.</li>
+<li>Supermicro, AMI Aptio V BIOS POST Codes for Supermicro Motherboards, Rev. 1.0b, 2024 (supermicro.com/manuals/other/).</li>
+<li>GIGABYTE, GA-8I865PEM-775 user manual.</li>
+<li>ASUS support FAQ 1042678, ASUS motherboard troubleshooting via Q-LED indicators.</li>
+<li>MSI board user manuals, section "EZ Debug LED".</li>
+<li>Dell knowledge base 000126021, A Reference Guide to the Dell OptiPlex Diagnostic Indicators.</li>
+<li>HP, EliteDesk 800 G2 TWR Maintenance and Service Guide (h10032.www1.hp.com, c04832338).</li>
+<li>Lenovo, ThinkCentre M90a Pro Gen6 Hardware Maintenance Manual, 2025 (download.lenovo.com).</li>
+</ul>
+<p>Codes change between models and BIOS versions. When the PC or board maker's own manual disagrees with
+this page, the manual is right.</p>
+</main>
+</body>
+</html>
