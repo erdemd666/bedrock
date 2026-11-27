@@ -111,6 +111,7 @@ static void save_report(void)
 
 static void display(void) { screen(); gpu_display_test(); pause_enter(); }
 static void wipe(void) { screen(); wipe_run(); pause_enter(); }
+static void certs(void) { screen(); if (cert_run()) pause_enter(); }
 static void do_sysinfo(void) { run_paged(sysinfo); }
 static void do_disks(void) { run_paged(disk_show); }
 static void do_stress(void) { run_paged(stress); }
@@ -130,6 +131,7 @@ static const struct item {
 	{'6', "Display test (colours and gradients)", display},
 	{'7', "Save a report to the USB stick", save_report},
 	{'8', "Wipe a disk (destroys data)", wipe},
+	{'k', "Certificates, resale sheet and signing key", certs},
 };
 
 int main(int argc, char **argv)

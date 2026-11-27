@@ -41,6 +41,15 @@ bedrock --report FILE    # same, to FILE
 `--report` exit status: 0 no failures, 1 at least one FAIL, 2 could not write.
 Every check prints one of PASS, FAIL, INCONCLUSIVE or NOT PRESENT with its reason.
 
+`make sample` rewrites `../docs/sample-certificate.json` (signed with the published sample key).
+
+## Vendored code (`src/vendor/`)
+
+Monocypher 4.0.2 (`monocypher.c/.h`, and `monocypher-ed25519.c/.h` for RFC 8032 Ed25519 with
+SHA-512), copied unchanged from the official release tarball `monocypher-4.0.2.tar.gz`
+(SHA-256 `38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c`). Licence:
+`src/vendor/MONOCYPHER-LICENCE.md` (BSD-2-Clause or CC0).
+
 ## Test fixtures (`tests/fixtures/`)
 
 | File | Origin |

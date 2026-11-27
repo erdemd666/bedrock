@@ -432,6 +432,72 @@ static void min_str(int m, char *s, size_t n)
 		snprintf(s, n, "not given");
 }
 
+/* NIST SP 800-88 Rev. 2 category for a method name built in wipe_run(). Rev. 2 leaves
+ * technique detail to IEEE 2883-2022. Purge only where the command is defined to reach
+ * all of the media, spare and remapped blocks included, or replaces its encryption key;
+ * anything that may leave those blocks untouched is recorded as Clear. */
+const char *nist_category(const char *method, const char **why)
+{
+	if (!strncmp(method, "NVMe Sanitize", 13)) {
+		*why = "the drive's Sanitize command reaches all of its media, spare and remapped blocks included, "
+		       "and its status log reported completion";
+		return "Purge";
+	}
+	if (!strcmp(method, "NVMe Format, crypto erase")) {
+		*why = "Format NVM with cryptographic erase replaced the key that encrypts all user data";
+		return "Purge";
+	}
+	if (!strncmp(method, "ATA Security Erase", 18))
+		*why = "the ATA Security feature set does not oblige every drive to erase spare and remapped blocks, "
+		       "and its result cannot be inspected; Purge on ATA needs the SANITIZE feature set, not used here";
+	else if (!strncmp(method, "NVMe Format", 11))
+		*why = "Format NVM user data erase is not required to reach blocks outside the addressable space";
+	else
+		*why = "one pass over every user-addressable block; spare and remapped blocks are not reached";
+	return "Clear";
+}
+
+/* Signed sanitization certificate (docs/CERTIFICATE.md) on the stick, beside the wipe log. */
+static void wipe_cert(const struct disk *x, int ssd, const char *method, enum verdict v, const char *why, time_t t0, time_t dur)
+{
+	char *ex = NULL, ts[32], stem[128], path[512], msg[400];
+	size_t len;
+	const char *note, *cat = nist_category(method, &note);
+	FILE *m;
+	if (!fact_get("system.product") && (m = fopen("/dev/null", "w"))) {
+		board_show(m); /* the machine's identity for the certificate */
+		fclose(m);
+	}
+	if (!(m = open_memstream(&ex, &len)))
+		return;
+	fputs("{\"media\":{\"model\":", m);
+	json_str(m, x->model);
+	fputs(",\"serial\":", m);
+	json_str(m, x->serial);
+	fprintf(m, ",\"kind\":\"%s\",\"capacity_bytes\":%llu,\"interface\":\"%s\"},\"sanitization\":{\"category\":\"%s\",\"technique\":",
+		ssd ? "SSD" : "HDD", x->bytes, x->nvme ? "NVMe" : on_usb(x->name) ? "USB" : x->ata ? "ATA" : "other", cat);
+	json_str(m, method);
+	fputs(",\"details\":", m);
+	json_str(m, note);
+	fputs(",\"verification\":", m);
+	json_str(m, why);
+	iso_time(t0, ts, sizeof ts);
+	fprintf(m, ",\"result\":\"%s\",\"started\":\"%s\"", verdict_name(v), ts);
+	iso_time(t0 + dur, ts, sizeof ts);
+	fprintf(m, ",\"finished\":\"%s\"}}", ts);
+	fclose(m);
+	strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", gmtime(&t0));
+	snprintf(stem, sizeof stem, "%s-%s", ts, x->serial);
+	int r = signed_save("sanitization", ex, "certificates", stem, path, sizeof path);
+	if (r < 0)
+		printf("No writable USB partition: the certificate was not saved.\n");
+	else if (r)
+		printf("Certificate (NOT signed: %s): %s\n", (cert_key(msg, sizeof msg), msg), path);
+	else
+		printf("Signed certificate: %s\n", path);
+	free(ex);
+}
+
 void wipe_run(void)
 {
 	struct disk d[32];
@@ -590,26 +656,23 @@ void wipe_run(void)
 		snprintf(no, sizeof no, "%s %s", method, r < 0 ? "was refused, nothing was erased" : "failed");
 		fw[0] = 0;
 	}
-	verdict(stdout, v, "Wipe", "/dev/%s (serial %s); method: %s; took %ld min %02ld s; verification: %s",
+	char detail[384], mp[256], lp[300], ts[32];
+	snprintf(detail, sizeof detail, "/dev/%s (serial %s); method: %s; took %ld min %02ld s; verification: %s",
 		x->name, x->serial, method, (long)dur / 60, (long)dur % 60, why);
+	verdict(stdout, v, "Wipe", "%s", detail);
 	/* The erase certificate leaves with the user: append it to the stick's wipe log. */
-	char mp[256], lp[300], ts[32];
 	time_t now = time(NULL);
 	FILE *lf;
 	if (!report_mount(mp) && snprintf(lp, sizeof lp, "%s/bedrock-wipe-log.txt", mp) < (int)sizeof lp &&
 	    (lf = fopen(lp, "a"))) {
-		int c = g_color;
-		g_color = 0;
 		strftime(ts, sizeof ts, "%Y-%m-%d %H:%M UTC", gmtime(&now));
-		fprintf(lf, "%s  model %s\n", ts, x->model);
-		verdict(lf, v, "Wipe", "/dev/%s (serial %s); method: %s; took %ld min %02ld s; verification: %s",
-			x->name, x->serial, method, (long)dur / 60, (long)dur % 60, why);
-		g_color = c;
+		fprintf(lf, "%s  model %s\n  %-12s Wipe: %s\n", ts, x->model, verdict_name(v), detail);
 		fflush(lf);
 		fsync(fileno(lf)); /* the user pulls the stick right after */
 		printf(fclose(lf) ? "Could not save the wipe log.\n" : "Saved to %s\n", lp);
 	} else
 		printf("No writable USB partition: the wipe result was not saved.\n");
+	wipe_cert(x, ssd, method, v, why, t0, dur);
 out:
 	close(fd);
 	free(buf);
