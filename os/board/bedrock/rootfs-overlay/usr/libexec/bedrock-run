@@ -3,7 +3,8 @@
 # Runs bedrock on TTY. When it exits, a closing screen offers restart, reboot and
 # power off. Typing the hidden word "maintain" there opens a maintenance shell.
 # With bedrock.report on the kernel command line, ttyS0 first runs one headless
-# report (used by the CI boot test).
+# report (used by the CI boot test). In fleet mode without it, tty1 does that
+# instead and the record goes to the fleet server.
 tty=$1
 case $tty in
 ttyS*)	grep -q "^${tty#ttyS}: uart:unknown" /proc/tty/driver/serial && exec sleep 2147483647 ;;
@@ -20,6 +21,14 @@ if [ "$tty" = ttyS0 ] && grep -qw bedrock.report /proc/cmdline && [ ! -e /tmp/re
 	: >/tmp/report-done
 	/usr/bin/bedrock --report
 	echo "bedrock --report: exit $?"
+fi
+
+# Fleet mode on the screen: test this PC, send the record, leave the result up.
+if [ "$tty" = tty1 ] && ! grep -qw bedrock.report /proc/cmdline && [ ! -e /tmp/fleet-done ] && /usr/bin/bedrock --fleet-url >/dev/null; then
+	: >/tmp/fleet-done
+	/usr/bin/bedrock --report
+	printf '\nPress Enter for the menu.'
+	read -r _
 fi
 
 while :; do

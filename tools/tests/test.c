@@ -429,6 +429,42 @@ static void test_record(void)
 	record_reset();
 }
 
+static void test_fleet(void)
+{
+	struct fleet_url u;
+	char buf[512], v[64];
+	CHECK(!fleet_url_parse("http://10.0.2.2:8080", &u) && !strcmp(u.host, "10.0.2.2") && !strcmp(u.port, "8080") && !u.path[0]);
+	CHECK(!fleet_url_parse("http://fleet.lan", &u) && !strcmp(u.host, "fleet.lan") && !strcmp(u.port, "80"));
+	CHECK(!fleet_url_parse("http://fleet.lan:9//", &u) && !strcmp(u.port, "9") && !u.path[0]);
+	CHECK(!fleet_url_parse("http://h/prefix/x/", &u) && !strcmp(u.path, "/prefix/x"));
+	CHECK(fleet_url_parse("https://h", &u) && fleet_url_parse("h:80", &u) && fleet_url_parse("http://", &u));
+	CHECK(fleet_url_parse("http://:80", &u) && fleet_url_parse("http://h:", &u) && fleet_url_parse("http://h:0", &u));
+	CHECK(fleet_url_parse("http://h:65536", &u) && fleet_url_parse("http://h:80x", &u) && fleet_url_parse("http://[::1]:80", &u));
+	CHECK(fleet_url_parse("http://a b", &u) && fleet_url_parse("http://h?x=1", &u));
+
+	fleet_url_parse("http://10.0.2.2:8080/f", &u);
+	size_t n = fleet_request(buf, sizeof buf, &u, 1234);
+	CHECK(n == strlen(buf) && !strncmp(buf, "POST /f/api/records HTTP/1.1\r\nHost: 10.0.2.2:8080\r\n", 50));
+	CHECK(strstr(buf, "\r\nContent-Length: 1234\r\n") && strstr(buf, "\r\nContent-Type: application/json\r\n"));
+	CHECK(!strcmp(buf + n - 4, "\r\n\r\n")); /* headers end; the body follows */
+	fleet_url_parse("http://fleet.lan", &u);
+	fleet_request(buf, sizeof buf, &u, 0);
+	CHECK(strstr(buf, "POST /api/records HTTP/1.1\r\nHost: fleet.lan\r\n") == buf);
+	CHECK(fleet_request(buf, 20, &u, 5) == 0); /* too small */
+
+	CHECK(fleet_status("HTTP/1.1 201 Created\r\n", 22) == 201);
+	CHECK(fleet_status("HTTP/1.0 200 OK", 15) == 200);
+	CHECK(fleet_status("HTTP/1.1 503", 12) == 503);
+	CHECK(fleet_status("HTTP/1.1 20", 11) == -1 && fleet_status("HTTP/2 200 OK", 13) == -1);
+	CHECK(fleet_status("HTTP/1.1 2x0 OK", 15) == -1 && fleet_status("garbage garbage", 15) == -1);
+
+	CHECK(!fleet_find("quiet bedrock.fleet=http://a:1 console=tty0\n", "bedrock.fleet", v, sizeof v) && !strcmp(v, "http://a:1"));
+	CHECK(fleet_find("quiet xbedrock.fleet=http://a bedrock.fleet2=x", "bedrock.fleet", v, sizeof v));
+	CHECK(!fleet_find("operator = Ann\n# fleet_url = http://old\n  fleet_url = \"http://b:2\"  \n", "fleet_url", v, sizeof v) && !strcmp(v, "http://b:2"));
+	CHECK(fleet_find("# fleet_url=http://x\nfleet_url\n", "fleet_url", v, sizeof v));
+	CHECK(fleet_find("fleet_url=http://averyveryverylongaddress", "fleet_url", v, 8));
+}
+
 int main(void)
 {
 	test_cpuid();
@@ -444,6 +480,7 @@ int main(void)
 	test_pciids();
 	test_mem_patterns();
 	test_record();
+	test_fleet();
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

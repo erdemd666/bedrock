@@ -143,12 +143,19 @@ int main(int argc, char **argv)
 			return 2;
 		}
 		report_run(o, "Headless report");
+		fleet_upload(o);
 		if (fclose(o))
 			return 2;
 		return g_count[V_FAIL] ? 1 : 0;
 	}
+	if (argc == 2 && !strcmp(argv[1], "--fleet-url")) { /* for the boot scripts: exit 0 if a fleet server is set */
+		const char *u = fleet_url();
+		if (u)
+			puts(u);
+		return !u;
+	}
 	if (argc >= 2) {
-		fprintf(stderr, "usage: bedrock [--report [file]]\n");
+		fprintf(stderr, "usage: bedrock [--report [file] | --fleet-url]\n");
 		return 2;
 	}
 	g_color = 1;

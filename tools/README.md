@@ -38,6 +38,10 @@ bedrock --report         # all non-destructive quick checks, plain text to stdou
 bedrock --report FILE    # same, to FILE
 ```
 
+With `bedrock.fleet=URL` on the boot line or `fleet_url = URL` in `bedrock.cfg`, `--report`
+also POSTs the record to that fleet server (plain HTTP, LAN only; see `../fleet/README.md`)
+and prints "Sent to fleet server" or the error. `bedrock --fleet-url` prints the URL, exit 1 if none.
+
 `--report` exit status: 0 no failures, 1 at least one FAIL, 2 could not write.
 Every check prints one of PASS, FAIL, INCONCLUSIVE or NOT PRESENT with its reason.
 

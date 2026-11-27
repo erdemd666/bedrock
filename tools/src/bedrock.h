@@ -105,6 +105,16 @@ void smart_nvme_parse(const uint8_t s[512], struct nvme_smart *m);
 enum verdict smart_nvme_verdict(const struct nvme_smart *m, char *why, size_t n);
 void smart_show(FILE *o, const struct disk *d);
 
+/* fleet.c: upload the record to a fleet server over plain HTTP */
+struct fleet_url { char host[128], port[8], path[128]; };
+int fleet_url_parse(const char *url, struct fleet_url *u);
+size_t fleet_request(char *buf, size_t n, const struct fleet_url *u, size_t len);
+int fleet_status(const char *resp, size_t n);
+int fleet_find(const char *text, const char *key, char *out, size_t n);
+const char *fleet_url(void);
+int fleet_send(const char *url, const char *json, size_t len, char *err, size_t n);
+void fleet_upload(FILE *o);
+
 /* board.c */
 struct dimm {
 	char loc[32], bank[32], maker[32], part[32], serial[24];

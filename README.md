@@ -28,6 +28,8 @@ make v86        # out/bedrock-v86.iso
 make qemu-p3    # boot bedrock.img on a Pentium III with SeaBIOS (serial on stdio, Ctrl-A x quits)
 make qemu-uefi  # boot bedrock.img on x86_64 with OVMF
 make boottest   # headless report over serial on both, as CI runs it; menu screenshots in out/
+make fleet      # out/fleet/: network-boot server and kernels, see fleet/README.md
+make fleettest  # boot the x86_64 kernel in QEMU and check the server received its record
 ```
 
 Without make (for example on Windows), run the same targets inside the build image:
@@ -58,6 +60,7 @@ downloads stay in the Docker volume `bedrock-work`, so later builds are incremen
 See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - `tools/` the diagnostics program (C, static, musl)
+- `fleet/` the network-boot fleet server (Go, standard library only)
 - `os/` Buildroot external tree: defconfigs, kernel config and patch, boot menus and artwork, rootfs overlay, image scripts
 - `docker/Dockerfile` pinned Buildroot, boot loaders, QEMU
 - `.github/workflows/build.yml` on a `v*` tag: build, boot-test in QEMU, attach the images to the release
